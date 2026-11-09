@@ -4,7 +4,7 @@
 
 | What | Command | Needs |
 |---|---|---|
-| Automated test suite (38 tests) | `cd backend && npm test` | `docker compose up -d db`, Node 24, `npm ci` once |
+| Automated test suite (42 tests) | `cd backend && npm test` | `docker compose up -d db`, Node 24, `npm ci` once |
 | Day 1 smoke test | `./tests/smoke-day1.sh` | full stack running |
 | Last-unit race against any deployment | `node tests/concurrency-test.mjs` (`API_URL=...` to target minikube/DOKS) | full stack running |
 | Database integrity checks | `docker compose exec -T db psql -U stocksync -d stocksync < database/checks.sql` | db running |
@@ -25,7 +25,14 @@ not end in `_test`.)
 | Transfers | full lifecycle; dispatch only by source manager; receive only by destination; double dispatch/receive rejected; insufficient source stock leaves the transfer `requested`; cancelling in-transit returns units (`transfer_return`) |
 | Transfer races | 10 simultaneous receives → units arrive once; 10 simultaneous dispatches → units leave once; receive vs cancel → exactly one wins, no unit lost or duplicated |
 | Access control | store scoping (403), role checks (403), validation (400), login required (401) |
+| System page | admin-only (401/403 for others); reports DB, pool, integrity, auth; **never contains the JWT key, DB password or password hashes**; every catalogued route exists |
 | Integrity | after every test file: stock = sum of audit history; no negative stock; every received transfer has exactly one `transfer_in` |
+
+## Continuous integration
+
+The same suite runs automatically on every pull request in GitHub Actions
+(`.github/workflows/ci.yml`) against a fresh PostgreSQL 18 service container,
+together with the frontend build and `linux/amd64` builds of both Docker images.
 
 ## Evidence: the race test detects real overselling
 

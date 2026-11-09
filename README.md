@@ -1,10 +1,12 @@
 # StockSync
 
+![CI](https://github.com/sohaib629/ccproject/actions/workflows/ci.yml/badge.svg)
+
 Smart inventory management for a two-store electronics retailer, built as a
 stateful cloud-native application for ECE1779 (Introduction to Cloud Computing).
 
-> The full final report will replace this README. Current status: **Day 2:
-> inventory API (sales, restocks, adjustments, transfers, audit) with automated tests.**
+> The full final report will replace this README. Current status: **Day 3:
+> React frontend, admin System page, and CI on every pull request.**
 
 ## Quick start (local, Docker Compose)
 
@@ -16,9 +18,10 @@ openssl rand -hex 24 > secrets/db_password.txt
 openssl rand -hex 32 > secrets/jwt_secret.txt
 cp .env.example .env
 
-# 2. Build and start PostgreSQL 18 + the API
+# 2. Build and start PostgreSQL 18, the API and the frontend
 docker compose up --build -d
-docker compose ps            # db and api should both be "healthy"
+docker compose ps            # db, api and frontend should all be "healthy"
+open http://localhost:8080   # the web app
 
 # 3. Verify
 ./tests/smoke-day1.sh                 # health, login, roles
@@ -45,12 +48,43 @@ Demo accounts (password `StockSync!2026`):
 ```
 backend/     Express API (Node.js 24) and its Dockerfile
 database/    init/ schema + seed (run on first start), checks.sql integrity checks
-frontend/    React app (Day 3)
+frontend/    React app (Vite) and its nginx Dockerfile
 k8s/         Kubernetes manifests (Day 4+)
 tests/       smoke, concurrency and load tests
 docs/        architecture and evidence
 compose.yaml local multi-container setup
+.github/     CI workflow: tests + builds on every pull request
 ```
+
+## Frontend
+
+React 19 single-page app built with Vite, served by nginx (non-root, port 8080).
+It always calls the API at the relative path `/api`, so one build works everywhere:
+Vite's dev server proxies `/api` locally, nginx proxies it in Docker Compose, and the
+Kubernetes Gateway routes it in the cloud.
+
+| Page | Who | What |
+|---|---|---|
+| Inventory | all | both stores side by side; low/out highlighted; Sell, Restock (own store), Adjust (manager/admin) |
+| Transfers | all | request; Dispatch (source manager), Receive (destination), Cancel (managers) |
+| Low stock | all | items at or below reorder threshold |
+| History | all (own store; admin all) | append-only audit log, filters, paging |
+| System | admin | live infrastructure view: API replica, replicas seen, Kubernetes pod/node, PostgreSQL version/latency/size/pool, live integrity checks, auth settings (no secret values), permissions matrix, route list |
+
+Frontend development with hot reload: `cd frontend && npm ci && npm run dev` → http://localhost:5173
+(needs the API on localhost:3000, e.g. `docker compose up -d db api`).
+
+Buttons are shown according to role, but **all rules are enforced by the API**; hiding
+a button is only a convenience. Tradeoff: the login token is kept in `sessionStorage`
+(cleared when the tab closes). An httpOnly cookie would resist XSS better but would need
+CSRF protection; the strict Content-Security-Policy set by nginx reduces the XSS risk.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and push to `main`:
+1. **Backend tests**: the full suite against a fresh PostgreSQL 18 service container.
+2. **Frontend build**: `npm ci && npm run build`.
+3. **Docker images**: both images built for `linux/amd64` (DigitalOcean's architecture).
 
 ## API
 
@@ -79,3 +113,4 @@ Errors are returned as `{ "error": { "code", "message", "details" } }`.
 | POST | /api/transfers/:id/receive | destination store, admin | in_transit → received (stock arrives, exactly once) |
 | POST | /api/transfers/:id/cancel | manager of either store, admin | → cancelled (in-transit units returned to source) |
 | GET | /api/movements | own store (admin all) | audit history, newest first (`?storeId=&productId=&userId=&type=&transferId=&limit=&before=`) |
+| GET | /api/system | admin | infrastructure status for the System page (no secret values) |
