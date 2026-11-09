@@ -1,7 +1,12 @@
 // PostgreSQL connection pool plus a transaction helper.
-const { Pool } = require("pg");
+const { Pool, types } = require("pg");
 const config = require("./config");
 const logger = require("./lib/logger");
+
+// BIGINT (e.g. stock_movements.id) arrives as a string by default because it can
+// exceed JavaScript's safe integer range. Our ids never get near 2^53, so parse
+// them as numbers.
+types.setTypeParser(types.builtins.INT8, (value) => Number.parseInt(value, 10));
 
 const pool = new Pool({
   host: config.db.host,
