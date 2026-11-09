@@ -40,6 +40,8 @@ function authenticate(req, _res, next) {
       role: claims.role,
       storeId: claims.storeId ?? null,
       name: claims.name,
+      tokenIssuedAt: new Date(claims.iat * 1000).toISOString(),
+      tokenExpiresAt: new Date(claims.exp * 1000).toISOString(),
     };
     return next();
   } catch {

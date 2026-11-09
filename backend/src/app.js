@@ -16,6 +16,7 @@ const stockRoutes = require("./routes/stock");
 const inventoryRoutes = require("./routes/inventory");
 const transferRoutes = require("./routes/transfers");
 const movementRoutes = require("./routes/movements");
+const systemRoutes = require("./routes/system");
 
 function createApp() {
   const app = express();
@@ -53,6 +54,7 @@ function createApp() {
   app.use("/api/products", productRoutes);
   app.use("/api/transfers", transferRoutes);
   app.use("/api/movements", movementRoutes);
+  app.use("/api/system", systemRoutes);
   app.use("/api", stockRoutes); //     GET  /api/stock, /api/low-stock
   app.use("/api", inventoryRoutes); // POST /api/sales, /api/restocks, /api/adjustments
 

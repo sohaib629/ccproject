@@ -8,15 +8,21 @@
 
 const fs = require("node:fs");
 
+// Where each secret was loaded from ("file" or "env"). Reported by /api/system;
+// the secret values themselves are never exposed.
+const secretSources = {};
+
 function readSecret(name, { required = true } = {}) {
   const filePath = process.env[`${name}_FILE`];
   if (filePath) {
+    secretSources[name] = "file";
     return fs.readFileSync(filePath, "utf8").trim();
   }
   const value = process.env[name];
   if (!value && required) {
     throw new Error(`Missing required secret: set ${name} or ${name}_FILE`);
   }
+  secretSources[name] = "env";
   return value;
 }
 
@@ -59,6 +65,18 @@ const config = Object.freeze({
   trustProxy: intFromEnv("TRUST_PROXY_HOPS", 0),
   // Identifies which replica answered; set from the pod name in Kubernetes.
   instance: process.env.HOSTNAME || "local",
+  // Shown on the System page. DEPLOY_ENV: docker-compose | minikube | doks.
+  deployEnv: process.env.DEPLOY_ENV || "local",
+  appVersion: process.env.APP_VERSION || require("../package.json").version,
+  gitSha: process.env.GIT_SHA || "dev",
+  // Filled in by the Kubernetes Downward API from Day 4 onwards (null before).
+  kubernetes: Object.freeze({
+    podName: process.env.POD_NAME || null,
+    namespace: process.env.POD_NAMESPACE || null,
+    nodeName: process.env.NODE_NAME || null,
+    podIp: process.env.POD_IP || null,
+  }),
+  secretSources: Object.freeze({ ...secretSources }),
 });
 
 module.exports = config;
