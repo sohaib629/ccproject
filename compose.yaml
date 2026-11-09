@@ -1,0 +1,83 @@
+# StockSync local development stack.
+#   docker compose up --build -d      build and start everything
+#   docker compose ps                 status (both services should be "healthy")
+#   docker compose logs -f api        follow API logs
+#   docker compose down               stop; the db-data volume (your data) is kept
+#   docker compose down -v            stop AND delete data (re-runs database/init/*.sql next start)
+name: stocksync
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-stocksync}
+      POSTGRES_DB: ${POSTGRES_DB:-stocksync}
+      # Read from a Docker secret file instead of a plain environment variable.
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      # PostgreSQL 18 images keep data under /var/lib/postgresql/<major>/...,
+      # so the volume is mounted at /var/lib/postgresql (not .../data).
+      - db-data:/var/lib/postgresql
+      # Schema + seed, run once on first start with an empty volume.
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Bound to localhost only, on 5433 to avoid clashing with any local PostgreSQL.
+      # Lets you connect with a GUI tool (TablePlus, pgAdmin) during development.
+      - "127.0.0.1:${DB_HOST_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  api:
+    build: ./backend
+    image: stocksync-api:dev
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PORT: 3000
+      DB_HOST: db                       # the Compose service name is the hostname
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-stocksync}
+      DB_NAME: ${POSTGRES_DB:-stocksync}
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+    secrets:
+      - db_password
+      - jwt_secret
+    ports:
+      - "${API_HOST_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy      # wait for pg_isready, not just "container started"
+    healthcheck:
+      # node:24-slim has no curl; Node 24 has fetch built in.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - app-network
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+
+volumes:
+  db-data:
+
+networks:
+  app-network:
+    driver: bridge
