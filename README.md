@@ -3,8 +3,8 @@
 Smart inventory management for a two-store electronics retailer, built as a
 stateful cloud-native application for ECE1779 (Introduction to Cloud Computing).
 
-> The full final report will replace this README. Current status: **Day 1:
-> database, API foundation and authentication.**
+> The full final report will replace this README. Current status: **Day 2:
+> inventory API (sales, restocks, adjustments, transfers, audit) with automated tests.**
 
 ## Quick start (local, Docker Compose)
 
@@ -21,8 +21,14 @@ docker compose up --build -d
 docker compose ps            # db and api should both be "healthy"
 
 # 3. Verify
-./tests/smoke-day1.sh
+./tests/smoke-day1.sh                 # health, login, roles
+node tests/concurrency-test.mjs       # 20 buyers race for the last unit
+
+# 4. Automated test suite (separate stocksync_test database)
+cd backend && npm ci && npm test
 ```
+
+See [docs/testing.md](docs/testing.md) for what the tests prove.
 
 Demo accounts (password `StockSync!2026`):
 
@@ -46,7 +52,10 @@ docs/        architecture and evidence
 compose.yaml local multi-container setup
 ```
 
-## API so far
+## API
+
+All `/api` routes except login require `Authorization: Bearer <token>`.
+Errors are returned as `{ "error": { "code", "message", "details" } }`.
 
 | Method | Path | Access | Purpose |
 |---|---|---|---|
@@ -56,3 +65,17 @@ compose.yaml local multi-container setup
 | GET | /api/auth/me | any role | current user |
 | GET | /api/stores | any role | list stores |
 | GET | /api/users | admin | list accounts |
+| GET | /api/products | any role | catalogue with per-store quantities (`?category=&q=`) |
+| GET | /api/products/:id | any role | one product |
+| GET | /api/stock | any role | stock rows (`?storeId=&productId=&category=&q=&lowOnly=true`) |
+| GET | /api/low-stock | any role | at/below reorder threshold (`?storeId=`) |
+| POST | /api/sales | any role, own store | `{storeId, productId, quantity, note?}` → 201, or 409 `OUT_OF_STOCK` |
+| POST | /api/restocks | any role, own store | `{storeId, productId, quantity, note?}` |
+| POST | /api/adjustments | manager/admin, own store | `{storeId, productId, change, reason}` (change may be negative) |
+| GET | /api/transfers | any role (own store; admin all) | `?status=&storeId=` |
+| GET | /api/transfers/:id | involved stores, admin | one transfer |
+| POST | /api/transfers | either store involved, admin | `{productId, fromStoreId, toStoreId, quantity, note?}` |
+| POST | /api/transfers/:id/dispatch | source-store manager, admin | requested → in_transit (stock leaves source) |
+| POST | /api/transfers/:id/receive | destination store, admin | in_transit → received (stock arrives, exactly once) |
+| POST | /api/transfers/:id/cancel | manager of either store, admin | → cancelled (in-transit units returned to source) |
+| GET | /api/movements | own store (admin all) | audit history, newest first (`?storeId=&productId=&userId=&type=&transferId=&limit=&before=`) |
