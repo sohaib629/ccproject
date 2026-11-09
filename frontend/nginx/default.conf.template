@@ -1,0 +1,54 @@
+# nginx for the StockSync frontend.
+# Rendered at container start by the nginx image (envsubst): ${API_UPSTREAM}
+# defaults to http://api:3000 (the Compose service / Kubernetes Service name).
+server {
+    listen 8080;              # unprivileged port: the container runs as non-root
+    server_name _;
+    root /usr/share/nginx/html;
+    server_tokens off;        # do not advertise the nginx version
+
+    # Security headers for the app shell.
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" always;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    # Probe endpoint for Docker/Kubernetes.
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # API calls go to the backend. (On DigitalOcean the Gateway routes /api
+    # straight to the API Service, so this block is only used inside the cluster
+    # or in Docker Compose.)
+    location /api/ {
+        proxy_pass ${API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+    }
+
+    # Fingerprinted build assets never change: cache them for a year.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable" always;
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    # Single-page app: unknown paths (e.g. /transfers on refresh) serve index.html.
+    location / {
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" always;
+    }
+}

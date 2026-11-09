@@ -1,5 +1,5 @@
 # StockSync local development stack.
-#   docker compose up --build -d      build and start everything
+#   docker compose up --build -d      build and start everything; open http://localhost:8080
 #   docker compose ps                 status (both services should be "healthy")
 #   docker compose logs -f api        follow API logs
 #   docker compose down               stop; the db-data volume (your data) is kept
@@ -41,6 +41,8 @@ services:
     image: stocksync-api:dev
     environment:
       NODE_ENV: ${NODE_ENV:-development}
+      DEPLOY_ENV: docker-compose
+      TRUST_PROXY_HOPS: 1               # nginx sits in front: use the real client IP for rate limiting
       LOG_LEVEL: ${LOG_LEVEL:-info}
       PORT: 3000
       DB_HOST: db                       # the Compose service name is the hostname
@@ -65,6 +67,25 @@ services:
       timeout: 3s
       retries: 3
       start_period: 10s
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  frontend:
+    build: ./frontend
+    image: stocksync-frontend:dev
+    environment:
+      API_UPSTREAM: http://api:3000    # nginx forwards /api/ to the api service
+    ports:
+      - "${WEB_HOST_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     restart: unless-stopped
     networks:
       - app-network
