@@ -11,6 +11,11 @@ const healthRoutes = require("./routes/health");
 const authRoutes = require("./routes/auth");
 const storeRoutes = require("./routes/stores");
 const userRoutes = require("./routes/users");
+const productRoutes = require("./routes/products");
+const stockRoutes = require("./routes/stock");
+const inventoryRoutes = require("./routes/inventory");
+const transferRoutes = require("./routes/transfers");
+const movementRoutes = require("./routes/movements");
 
 function createApp() {
   const app = express();
@@ -45,6 +50,11 @@ function createApp() {
   app.use("/api/auth", authRoutes);
   app.use("/api/stores", storeRoutes);
   app.use("/api/users", userRoutes);
+  app.use("/api/products", productRoutes);
+  app.use("/api/transfers", transferRoutes);
+  app.use("/api/movements", movementRoutes);
+  app.use("/api", stockRoutes); //     GET  /api/stock, /api/low-stock
+  app.use("/api", inventoryRoutes); // POST /api/sales, /api/restocks, /api/adjustments
 
   app.use((_req, _res, next) => next(new AppError(404, "NOT_FOUND", "Route not found")));
 
