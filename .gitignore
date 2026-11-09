@@ -1,0 +1,19 @@
+# Dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+
+# Local configuration and secrets: NEVER commit these
+.env
+secrets/*
+!secrets/README.md
+
+# Backups and logs
+backups/
+*.log
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
