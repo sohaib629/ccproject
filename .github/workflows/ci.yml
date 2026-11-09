@@ -1,0 +1,101 @@
+# Continuous Integration: runs on every pull request and every push to main.
+# A pull request should only be merged when all three jobs are green.
+# (Continuous Deployment to DigitalOcean is added on Day 6.)
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same branch cancels the older, still-running check.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Backend tests (PostgreSQL 18)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # A throwaway PostgreSQL 18 just for this job. The test harness creates and
+    # resets its own stocksync_test database inside it.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: stocksync
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: stocksync
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stocksync"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc          # same Node version as local and Docker
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+
+      - name: Run test suite
+        run: npm test
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: stocksync
+          DB_PASSWORD: ci-only-password
+          TEST_DB_NAME: stocksync_test
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  docker-images:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [backend-tests, frontend-build]
+    steps:
+      - uses: actions/checkout@v4
+      # Build for linux/amd64 (the DigitalOcean node architecture) to prove the
+      # images build there. Nothing is pushed yet; that is the CD step on Day 6.
+      - name: Build API image
+        run: docker build --platform linux/amd64 -t stocksync-api:ci ./backend
+      - name: Build frontend image
+        run: docker build --platform linux/amd64 -t stocksync-frontend:ci ./frontend
+      - name: Check the API image loads its code
+        run: |
+          docker run --rm --platform linux/amd64 \
+            -e DB_PASSWORD=unused -e JWT_SECRET=ci-check-0123456789abcdef0123456789 \
+            --entrypoint node stocksync-api:ci \
+            -e "require('./src/app.js').createApp(); console.log('API image OK')"
