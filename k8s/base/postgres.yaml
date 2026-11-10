@@ -1,0 +1,113 @@
+# =============================================================================
+# PostgreSQL 18: self-managed, as a StatefulSet with a PersistentVolumeClaim.
+#
+# Why a StatefulSet (not a Deployment):
+#   * a stable identity (pod "postgres-0") and a stable DNS name;
+#   * volumeClaimTemplates: the PVC "data-postgres-0" is created once and is
+#     re-attached to the replacement pod whenever postgres-0 is deleted or
+#     rescheduled, so the data outlives any single pod.
+# The storage class is left unset on purpose: minikube's default is "standard"
+# (hostPath) and DOKS's default is "do-block-storage" (a DigitalOcean Volume),
+# so the same manifest gets the right disk in each environment.
+#
+# Limitation (documented): one replica = a single point of failure for the
+# database. The API is highly available; the database is not.
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/part-of: stocksync }
+spec:
+  # Headless Service (no virtual IP): DNS "postgres" resolves straight to the
+  # postgres-0 pod. Required by the StatefulSet; internal to the cluster only.
+  clusterIP: None
+  selector: { app.kubernetes.io/name: postgres }
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/part-of: stocksync }
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: postgres }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/part-of: stocksync }
+    spec:
+      # None of our pods call the Kubernetes API, so do not mount a service-account
+      # token. Also required for the /run/secrets mount: in Debian-based images
+      # /var/run -> /run, and the token mount (/var/run/secrets/kubernetes.io/...)
+      # would otherwise collide with our read-only secret volume.
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60   # let PostgreSQL shut down cleanly
+      securityContext:
+        fsGroup: 999                      # the "postgres" group owns the volume
+      containers:
+        - name: postgres
+          image: postgres:18
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: stocksync
+            - name: POSTGRES_DB
+              value: stocksync
+            # Same mechanism as Docker Compose: the password is read from a file.
+            - name: POSTGRES_PASSWORD_FILE
+              value: /run/secrets/db_password
+          volumeMounts:
+            # PostgreSQL 18 keeps its data in /var/lib/postgresql/18/docker, so the
+            # disk is mounted one level up (also avoids the "lost+found" problem
+            # of a freshly formatted block volume).
+            - name: data
+              mountPath: /var/lib/postgresql
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            # Schema + seed, run once when the volume is empty (first start).
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "stocksync", "-d", "stocksync"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "stocksync", "-d", "stocksync"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+      volumes:
+        - name: secrets
+          secret:
+            secretName: stocksync-secrets
+            items:
+              - key: db_password        # only the DB password; no JWT key for the database
+                path: db_password
+            defaultMode: 0440
+        - name: init-sql
+          configMap:
+            name: db-init-sql
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/part-of: stocksync }
+      spec:
+        accessModes: ["ReadWriteOnce"]   # one node at a time: fits a single DB pod
+        resources:
+          requests:
+            storage: 1Gi

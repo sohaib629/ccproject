@@ -1,0 +1,7 @@
+# Everything StockSync runs in its own namespace, isolated from other workloads.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stocksync
+  labels:
+    app.kubernetes.io/part-of: stocksync

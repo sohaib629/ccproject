@@ -1,0 +1,14 @@
+# Base manifests shared by every environment (minikube today, DOKS on Day 5).
+# Environment differences live in overlays/<env>/kustomization.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: stocksync
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: stocksync
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - postgres.yaml
+  - api.yaml
+  - frontend.yaml

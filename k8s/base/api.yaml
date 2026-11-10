@@ -1,0 +1,130 @@
+# =============================================================================
+# StockSync API: stateless, replicated Deployment behind a ClusterIP Service.
+# Any replica can serve any request: login state is in the JWT and all data
+# is in PostgreSQL, whose transactions keep stock correct across replicas.
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels: { app.kubernetes.io/name: api, app.kubernetes.io/part-of: stocksync }
+spec:
+  type: ClusterIP              # internal only; users come in via the frontend/Gateway
+  selector: { app.kubernetes.io/name: api }
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels: { app.kubernetes.io/name: api, app.kubernetes.io/part-of: stocksync }
+spec:
+  replicas: 2                  # >= 2 for availability; the HPA (Day 6) scales 2 -> 5
+  revisionHistoryLimit: 5      # keep old ReplicaSets for `kubectl rollout undo`
+  selector:
+    matchLabels: { app.kubernetes.io/name: api }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1              # start one new pod at a time...
+      maxUnavailable: 0        # ...and never drop below the desired count: zero downtime
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: api, app.kubernetes.io/part-of: stocksync }
+    spec:
+      # None of our pods call the Kubernetes API, so do not mount a service-account
+      # token. Also required for the /run/secrets mount: in Debian-based images
+      # /var/run -> /run, and the token mount (/var/run/secrets/kubernetes.io/...)
+      # would otherwise collide with our read-only secret volume.
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      # Spread replicas over different nodes when there is more than one (DOKS),
+      # so losing a node does not take down every API pod.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: api }
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000          # the "node" user from the image
+        runAsGroup: 1000
+        fsGroup: 1000            # mounted Secret files belong to this group (mode 0440)
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: api
+          image: stocksync-api   # tag set by the overlay (kustomize "images:")
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: api-config
+          env:
+            # Secrets as FILES, exactly like Docker Compose (/run/secrets/...).
+            - name: DB_PASSWORD_FILE
+              value: /run/secrets/db_password
+            - name: JWT_SECRET_FILE
+              value: /run/secrets/jwt_secret
+            # Downward API: the pod learns its own identity; shown on the System page.
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: POD_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+            - name: NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+            - name: POD_IP
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+          # Readiness: "send me traffic?" Fails while the database is unreachable,
+          # so the Service routes around this pod instead of returning errors.
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 2
+          # Liveness: "is the process stuck?" Never touches the database, so a
+          # database outage does not restart every API pod.
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            # On shutdown, wait briefly so the Service stops sending new requests
+            # BEFORE the app receives SIGTERM and closes (avoids dropped requests
+            # during rolling updates and scale-down).
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          # CPU request is required for the HPA (it scales on % of this request).
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true   # the API never writes to its own disk
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: secrets
+          secret:
+            secretName: stocksync-secrets
+            defaultMode: 0440
+---
+# Voluntary disruptions (node drain, cluster upgrade) must leave >= 1 API pod running.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+  labels: { app.kubernetes.io/name: api, app.kubernetes.io/part-of: stocksync }
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: api }
