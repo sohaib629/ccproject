@@ -5,8 +5,8 @@
 Smart inventory management for a two-store electronics retailer, built as a
 stateful cloud-native application for ECE1779 (Introduction to Cloud Computing).
 
-> The full final report will replace this README. Current status: **Day 3:
-> React frontend, admin System page, and CI on every pull request.**
+> The full final report will replace this README. Current status: **Day 4:
+> Kubernetes on minikube: StatefulSet + PVC, replicated API and frontend, probes, Secrets.**
 
 ## Quick start (local, Docker Compose)
 
@@ -49,7 +49,7 @@ Demo accounts (password `StockSync!2026`):
 backend/     Express API (Node.js 24) and its Dockerfile
 database/    init/ schema + seed (run on first start), checks.sql integrity checks
 frontend/    React app (Vite) and its nginx Dockerfile
-k8s/         Kubernetes manifests (Day 4+)
+k8s/         Kubernetes manifests (Kustomize base + overlays) and bootstrap.sh
 tests/       smoke, concurrency and load tests
 docs/        architecture and evidence
 compose.yaml local multi-container setup
@@ -78,6 +78,22 @@ Buttons are shown according to role, but **all rules are enforced by the API**; 
 a button is only a convenience. Tradeoff: the login token is kept in `sessionStorage`
 (cleared when the tab closes). An httpOnly cookie would resist XSS better but would need
 CSRF protection; the strict Content-Security-Policy set by nginx reduces the XSS risk.
+
+## Kubernetes (minikube)
+
+```bash
+minikube start -p stocksync --driver=docker --cpus=4 --memory=6g
+minikube -p stocksync addons enable metrics-server
+docker compose build                                     # builds stocksync-api:dev, stocksync-frontend:dev
+minikube -p stocksync image load stocksync-api:dev
+minikube -p stocksync image load stocksync-frontend:dev
+./k8s/bootstrap.sh                                       # Secret + init-SQL ConfigMap
+kubectl apply -k k8s/overlays/minikube
+kubectl -n stocksync rollout status deploy/api
+kubectl -n stocksync port-forward svc/frontend 7080:8080 # then open http://localhost:7080
+```
+
+See [docs/kubernetes.md](docs/kubernetes.md) for the design and the verification tests.
 
 ## Continuous integration
 

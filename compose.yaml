@@ -56,7 +56,9 @@ services:
       - db_password
       - jwt_secret
     ports:
-      - "${API_HOST_PORT:-3000}:3000"
+      # Localhost only: users reach the API through nginx; this port is just for
+      # tests and curl on this machine.
+      - "127.0.0.1:${API_HOST_PORT:-3000}:3000"
     depends_on:
       db:
         condition: service_healthy      # wait for pg_isready, not just "container started"

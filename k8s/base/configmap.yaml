@@ -1,0 +1,18 @@
+# Non-secret API settings. Secrets (DB password, JWT key) are NOT here: they are
+# created by k8s/bootstrap.sh from secrets/*.txt and never committed to git.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+data:
+  NODE_ENV: production
+  LOG_LEVEL: info
+  PORT: "3000"
+  DB_HOST: postgres            # the Postgres Service name (cluster DNS)
+  DB_PORT: "5432"
+  DB_USER: stocksync
+  DB_NAME: stocksync
+  DB_POOL_MAX: "10"            # x 5 replicas max (HPA) = 50 < max_connections 100
+  JWT_EXPIRES_IN: 8h
+  TRUST_PROXY_HOPS: "1"        # nginx (or the Gateway) sits in front of the API
+  DEPLOY_ENV: kubernetes       # overridden per environment by the overlays
