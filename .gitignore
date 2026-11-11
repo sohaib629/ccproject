@@ -17,3 +17,6 @@ backups/
 .DS_Store
 .vscode/
 .idea/
+
+# Temporary kustomizations created by k8s/deploy.sh
+k8s/.deploy.*/

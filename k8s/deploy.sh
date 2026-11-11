@@ -31,11 +31,13 @@ echo "Overlay:  $OVERLAY"
 echo "Images:   $API_IMAGE:$TAG"
 echo "          $FRONTEND_IMAGE:$TAG"
 
-TMP="$(mktemp -d)"
+# The temporary kustomization lives inside k8s/ (git-ignored), next to the
+# overlays, so the overlay is simply "../overlays/<name>". (A system temp dir
+# breaks on macOS: /var is a symlink to /private/var, and kustomize resolves the
+# symlink before applying the relative path.)
+TMP="$(mktemp -d "$PWD/k8s/.deploy.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
-# kustomize resolves resources relative to the kustomization file, so point at
-# the overlay with a relative path from the temporary directory.
-REL="$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$OVERLAY_DIR" "$TMP")"
+REL="../overlays/$OVERLAY"
 cat > "$TMP/kustomization.yaml" <<YAML
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
