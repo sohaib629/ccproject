@@ -26,7 +26,7 @@ Browser ──HTTPS──► stocksync.online (DigitalOcean DNS, A record)
 
 | Component | DigitalOcean resource |
 |---|---|
-| Cluster | DOKS `stocksync`, region `tor1`, 2 × `s-2vcpu-4gb` nodes, **VPC-native** (required for the managed Gateway API) |
+| Cluster | DOKS `stocksync`, region `nyc3` (tor1 had no capacity for s-2vcpu-4gb on Nov 10, 2026), 2 × `s-2vcpu-4gb` nodes, **VPC-native** (required for the managed Gateway API) |
 | Images | Container Registry (Basic tier: 5 repositories), images tagged with the git commit, built for `linux/amd64` |
 | Ingress | Gateway API (`gatewayClassName: cilium`) → automatically provisioned Network Load Balancer |
 | TLS | cert-manager v1.21 + Let's Encrypt (HTTP-01 through the Gateway); auto-renewal |
