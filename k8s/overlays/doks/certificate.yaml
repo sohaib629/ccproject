@@ -1,0 +1,21 @@
+# Let's Encrypt certificate for stocksync.online, managed by cert-manager.
+# cert-manager proves domain ownership with an HTTP-01 challenge on the
+# Gateway's port-80 listener, stores the certificate and key in the Secret
+# "stocksync-tls" (used by the Gateway's HTTPS listener), and renews it
+# automatically about 30 days before it expires.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: stocksync-tls
+  labels: { app.kubernetes.io/name: gateway, app.kubernetes.io/part-of: stocksync }
+spec:
+  secretName: stocksync-tls
+  dnsNames:
+    - stocksync.online
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-prod      # switch to letsencrypt-staging while debugging
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
