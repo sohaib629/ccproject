@@ -86,18 +86,23 @@ spec:
               readOnly: true
           # Readiness: "send me traffic?" Fails while the database is unreachable,
           # so the Service routes around this pod instead of returning errors.
+          # Probe timeouts allow for CPU throttling under load: with the default
+          # 1 s timeout, a busy pod (bcrypt logins at its CPU limit) failed its
+          # probes, flapped out of the Service and was even restarted (load test).
           readinessProbe:
             httpGet: { path: /ready, port: http }
             initialDelaySeconds: 3
             periodSeconds: 5
-            failureThreshold: 2
+            timeoutSeconds: 3
+            failureThreshold: 3
           # Liveness: "is the process stuck?" Never touches the database, so a
           # database outage does not restart every API pod.
           livenessProbe:
             httpGet: { path: /health, port: http }
             initialDelaySeconds: 10
             periodSeconds: 10
-            failureThreshold: 3
+            timeoutSeconds: 5
+            failureThreshold: 6        # restart only if stuck for about a minute
           lifecycle:
             # On shutdown, wait briefly so the Service stops sending new requests
             # BEFORE the app receives SIGTERM and closes (avoids dropped requests

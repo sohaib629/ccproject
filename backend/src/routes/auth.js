@@ -16,7 +16,11 @@ const router = Router();
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
+  // Count only WRONG CREDENTIALS (401). Without this, any non-2xx answer
+  // (a 503 from an overloaded pod, a 400 typo, or the 429s themselves) also
+  // counted, so a burst of server errors could lock real users out for 15 min.
   skipSuccessfulRequests: true,
+  requestWasSuccessful: (req, res) => res.statusCode !== 401,
   standardHeaders: "draft-8",
   legacyHeaders: false,
   message: { error: { code: "TOO_MANY_ATTEMPTS", message: "Too many login attempts, try again later" } },
