@@ -61,6 +61,20 @@ Tunables: `VUS` (default 40), `LOGIN_RATE` (logins/second, default 4), `HOLD`
 3–5, new pods spread over both nodes, k6 reports < 1% failed requests. After the
 test, replicas return to 2 over a few minutes.
 
+**What the first run taught us.** The HPA scaled 2 → 4 → 5 within a minute,
+but 3.5% of requests failed (57% of logins). Two causes, both fixed:
+
+1. *Probe timeouts.* Probes used the default 1 s timeout. A pod busy with bcrypt
+   logins (CPU-throttled at its 500m limit) answered `/ready` too slowly, so it
+   flapped out of the Service, pushing more load onto the others, and one pod was
+   restarted by its liveness probe. Probes now allow 3 s (readiness) and 5 s ×
+   6 failures (liveness).
+2. *Rate limiter counted the wrong things.* Every non-2xx login answer counted
+   towards the 10-attempt limit, including 5xx from overloaded pods and the 429s
+   themselves, and all traffic arrives from the load balancer's address. A few
+   errors therefore locked *everyone* out for 15 minutes. Now only wrong
+   credentials (401) count (`backend/test/auth.test.js`).
+
 Correctness and scaling are tested separately: `tests/concurrency-test.mjs`
 (a short burst) proves transactions, but only *sustained* load moves the HPA,
 which averages CPU over time.
