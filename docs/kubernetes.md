@@ -14,7 +14,10 @@ k8s/
     kustomization.yaml
   overlays/
     minikube/           local images (:dev, never pulled), DEPLOY_ENV=minikube
+    doks/               Gateway + HTTPRoutes + Certificate, registry pull Secret, DEPLOY_ENV=doks
+  cluster/              cluster-wide Let's Encrypt ClusterIssuers (cert-manager)
   bootstrap.sh          creates the Secret and the init-SQL ConfigMap (not stored in git)
+  deploy.sh             applies an overlay with pinned image tags and waits for rollouts
 ```
 
 ## From Docker Compose to Kubernetes
