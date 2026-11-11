@@ -51,7 +51,7 @@ k8s/
   (the Service stops routing to them) but are *not restarted*, because liveness
   does not depend on the database.
 - **Resource requests.** The API requests `100m` CPU; the Horizontal Pod Autoscaler
-  (Day 6) scales on a percentage of this request.
+  (`hpa.yaml`, 2 → 5 replicas) scales on a percentage of this request.
 - **Pod security.** API and frontend run as non-root with all Linux capabilities
   dropped, no privilege escalation and the default seccomp profile; the API also has
   a read-only root filesystem. Secret files are mode `0440`, readable only by the

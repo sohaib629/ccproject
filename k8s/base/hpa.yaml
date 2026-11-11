@@ -1,0 +1,47 @@
+# =============================================================================
+# Horizontal Pod Autoscaler for the API: 2 -> 5 replicas on CPU.
+#
+# Utilization is measured against the pod's CPU *request* (100m in api.yaml):
+# 70% means the average API pod uses more than 70m of CPU. Scaling the API is
+# safe because it is stateless; stock consistency lives in PostgreSQL, so any
+# number of replicas sells the last unit exactly once.
+#
+# Needs a resource-metrics pipeline (metrics-server):
+#   minikube:  minikube addons enable metrics-server
+#   DOKS:      see docs/operations.md (check with `kubectl top nodes`)
+#
+# The Deployment has no `replicas` field: the HPA owns the replica count, so a
+# `kubectl apply` during a deploy does not reset it.
+# =============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  labels: { app.kubernetes.io/name: api, app.kubernetes.io/part-of: stocksync }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 2               # never fewer than 2: availability across both nodes
+  maxReplicas: 5               # DB_POOL_MAX 10 x 5 = 50 connections < max_connections 100
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0      # react to load immediately...
+      policies:
+        - type: Pods
+          value: 2                       # ...adding at most 2 pods
+          periodSeconds: 30              # every 30 s
+    scaleDown:
+      stabilizationWindowSeconds: 120    # wait 2 min of low load before removing pods
+      policies:
+        - type: Pods
+          value: 1                       # remove 1 pod
+          periodSeconds: 60              # per minute (gradual, avoids flapping)
