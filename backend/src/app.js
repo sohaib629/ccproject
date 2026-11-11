@@ -37,7 +37,7 @@ function createApp() {
         return id;
       },
       // Probes hit these every few seconds; keep them out of the logs.
-      autoLogging: { ignore: (req) => req.url === "/health" || req.url === "/ready" },
+      autoLogging: { ignore: (req) => ["/health", "/ready", "/api/health"].includes(req.url) },
     }),
   );
 

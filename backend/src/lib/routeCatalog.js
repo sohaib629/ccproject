@@ -4,6 +4,7 @@
 module.exports = Object.freeze([
   { method: "GET",  path: "/health",                     access: "public",                         purpose: "Liveness probe: process is alive" },
   { method: "GET",  path: "/ready",                      access: "public",                         purpose: "Readiness probe: database reachable" },
+  { method: "GET",  path: "/api/health",                 access: "public",                         purpose: "End-to-end health via Gateway (uptime check)" },
   { method: "POST", path: "/api/auth/login",             access: "public (rate-limited)",          purpose: "Email + password → JWT" },
   { method: "GET",  path: "/api/auth/me",                access: "any role",                       purpose: "Current user" },
   { method: "GET",  path: "/api/stores",                 access: "any role",                       purpose: "List stores" },

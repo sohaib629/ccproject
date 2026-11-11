@@ -22,6 +22,7 @@ login() {
 echo "StockSync Day 1 smoke test against $API"
 check "GET /health is 200"                       200 "$(status "$API/health")"
 check "GET /ready is 200 (database reachable)"   200 "$(status "$API/ready")"
+check "GET /api/health is 200 (public check)"    200 "$(status "$API/api/health")"
 check "no token -> 401"                          401 "$(status "$API/api/stores")"
 check "wrong password -> 401"                    401 "$(status -H 'content-type: application/json' -d '{"email":"admin@stocksync.dev","password":"wrong"}' "$API/api/auth/login")"
 check "invalid body -> 400"                      400 "$(status -H 'content-type: application/json' -d '{"email":"x"}' "$API/api/auth/login")"
