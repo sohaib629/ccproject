@@ -4,6 +4,9 @@
 #   * Secret  stocksync-secrets  from secrets/db_password.txt and secrets/jwt_secret.txt
 #   * ConfigMap db-init-sql      from database/init/*.sql (single source of truth
 #                                shared with Docker Compose)
+#   * (doks) Secret docr                registry pull credentials (doctl)
+#   * (doks) Secret spaces-credentials  Spaces key for backups, from
+#                                       secrets/spaces_access_key.txt + spaces_secret_key.txt
 # Safe to re-run: uses "apply", so it creates or updates.
 #
 # Usage:  ./k8s/bootstrap.sh            minikube (uses the current kubectl context)
@@ -32,6 +35,17 @@ kubectl -n "$NS" create configmap db-init-sql \
 # On DigitalOcean: pull credentials for the private container registry.
 if [[ "${1:-}" == "doks" ]]; then
   doctl registry kubernetes-manifest --namespace "$NS" --name docr | kubectl apply -f -
+
+  # Spaces access key for the backup CronJob (limited to the backup bucket).
+  if [[ -s secrets/spaces_access_key.txt && -s secrets/spaces_secret_key.txt ]]; then
+    kubectl -n "$NS" create secret generic spaces-credentials \
+      --from-file=access_key=secrets/spaces_access_key.txt \
+      --from-file=secret_key=secrets/spaces_secret_key.txt \
+      --dry-run=client -o yaml | kubectl apply -f -
+  else
+    echo "WARNING: secrets/spaces_access_key.txt or spaces_secret_key.txt missing;"
+    echo "         backups will fail until they exist and this script is re-run."
+  fi
 fi
 
-echo "Secret and init-SQL ConfigMap are in place."
+echo "Secrets and init-SQL ConfigMap are in place."
