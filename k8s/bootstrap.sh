@@ -6,7 +6,8 @@
 #                                shared with Docker Compose)
 # Safe to re-run: uses "apply", so it creates or updates.
 #
-# Usage:  ./k8s/bootstrap.sh            (uses the current kubectl context)
+# Usage:  ./k8s/bootstrap.sh            minikube (uses the current kubectl context)
+#         ./k8s/bootstrap.sh doks       also creates the registry pull Secret "docr"
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -27,5 +28,10 @@ kubectl -n "$NS" create secret generic stocksync-secrets \
 kubectl -n "$NS" create configmap db-init-sql \
   --from-file=database/init \
   --dry-run=client -o yaml | kubectl apply -f -
+
+# On DigitalOcean: pull credentials for the private container registry.
+if [[ "${1:-}" == "doks" ]]; then
+  doctl registry kubernetes-manifest --namespace "$NS" --name docr | kubectl apply -f -
+fi
 
 echo "Secret and init-SQL ConfigMap are in place."

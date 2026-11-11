@@ -1,12 +1,14 @@
 # StockSync
 
+**Live:** https://stocksync.online
+
 ![CI](https://github.com/sohaib629/ccproject/actions/workflows/ci.yml/badge.svg)
 
 Smart inventory management for a two-store electronics retailer, built as a
 stateful cloud-native application for ECE1779 (Introduction to Cloud Computing).
 
-> The full final report will replace this README. Current status: **Day 4:
-> Kubernetes on minikube: StatefulSet + PVC, replicated API and frontend, probes, Secrets.**
+> The full final report will replace this README. Current status: **Day 5:
+> deployed on DigitalOcean Kubernetes at https://stocksync.online (Gateway API, Let's Encrypt, monitoring alerts).**
 
 ## Quick start (local, Docker Compose)
 
@@ -49,7 +51,8 @@ Demo accounts (password `StockSync!2026`):
 backend/     Express API (Node.js 24) and its Dockerfile
 database/    init/ schema + seed (run on first start), checks.sql integrity checks
 frontend/    React app (Vite) and its nginx Dockerfile
-k8s/         Kubernetes manifests (Kustomize base + overlays) and bootstrap.sh
+k8s/         Kubernetes manifests (base + minikube/doks overlays), cluster/ issuers, bootstrap.sh, deploy.sh
+monitoring/  DigitalOcean alert and uptime-check setup
 tests/       smoke, concurrency and load tests
 docs/        architecture and evidence
 compose.yaml local multi-container setup
@@ -95,6 +98,16 @@ kubectl -n stocksync port-forward svc/frontend 7080:8080 # then open http://loca
 
 See [docs/kubernetes.md](docs/kubernetes.md) for the design and the verification tests.
 
+## DigitalOcean (DOKS)
+
+See [docs/deployment.md](docs/deployment.md) for the architecture, design decisions and teardown.
+
+```bash
+export DOCR_REGISTRY=<your-registry>
+./k8s/bootstrap.sh doks                 # Secret, init-SQL ConfigMap, registry pull Secret
+./k8s/deploy.sh doks                    # images tagged with the current git commit
+```
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and push to `main`:
@@ -111,6 +124,7 @@ Errors are returned as `{ "error": { "code", "message", "details" } }`.
 |---|---|---|---|
 | GET | /health | public | liveness probe (process alive) |
 | GET | /ready | public | readiness probe (database reachable) |
+| GET | /api/health | public | end-to-end health through the Gateway (uptime check) |
 | POST | /api/auth/login | public, rate-limited | email + password → JWT |
 | GET | /api/auth/me | any role | current user |
 | GET | /api/stores | any role | list stores |

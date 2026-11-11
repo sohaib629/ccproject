@@ -1,0 +1,47 @@
+# =============================================================================
+# Cluster-wide Let's Encrypt issuers for cert-manager (apply once per cluster,
+# after cert-manager is installed with Gateway API support enabled).
+#
+#   letsencrypt-staging  untrusted test certificates, generous rate limits:
+#                        use this first if something is not working
+#   letsencrypt-prod     real, browser-trusted certificates (strict rate limits)
+#
+# HTTP-01 challenges are answered through the "stocksync" Gateway's port-80
+# listener: cert-manager creates a temporary HTTPRoute attached to it.
+# No contact e-mail is configured (optional for Let's Encrypt).
+# =============================================================================
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-staging-account
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - kind: Gateway
+                name: stocksync
+                namespace: stocksync
+                sectionName: http
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-prod-account
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - kind: Gateway
+                name: stocksync
+                namespace: stocksync
+                sectionName: http

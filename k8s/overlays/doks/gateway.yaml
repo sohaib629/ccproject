@@ -1,0 +1,89 @@
+# =============================================================================
+# External traffic on DigitalOcean: managed Gateway API (Cilium) on DOKS.
+#
+#   Internet ──► DigitalOcean Network Load Balancer (created for this Gateway)
+#            ──► Gateway "stocksync" (Cilium/Envoy, TLS terminated here)
+#                  /api/*  ──► Service api:3000       (replicated API)
+#                  /*      ──► Service frontend:8080  (React app via nginx)
+#
+# Port 80 only serves the ACME (Let's Encrypt) challenge and redirects
+# everything else to HTTPS. The certificate is issued by cert-manager into the
+# Secret "stocksync-tls" (see certificate.yaml).
+# =============================================================================
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: stocksync
+  labels: { app.kubernetes.io/name: gateway, app.kubernetes.io/part-of: stocksync }
+spec:
+  gatewayClassName: cilium          # provided and managed by DOKS
+  infrastructure:
+    annotations:
+      # Name shown in the DigitalOcean control panel.
+      service.beta.kubernetes.io/do-loadbalancer-name: stocksync-lb
+      # TCP pass-through: TLS is terminated by the Gateway with our own
+      # Let's Encrypt certificate, not by the load balancer.
+      service.beta.kubernetes.io/do-loadbalancer-tls-passthrough: "true"
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: stocksync.online
+      allowedRoutes:
+        namespaces: { from: Same }
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: stocksync.online
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: stocksync-tls
+      allowedRoutes:
+        namespaces: { from: Same }
+---
+# HTTPS: the application.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: stocksync
+  labels: { app.kubernetes.io/name: gateway, app.kubernetes.io/part-of: stocksync }
+spec:
+  parentRefs:
+    - name: stocksync
+      sectionName: https
+  hostnames: ["stocksync.online"]
+  rules:
+    # API calls go straight to the API Service (no extra hop through nginx).
+    - matches:
+        - path: { type: PathPrefix, value: /api }
+      backendRefs:
+        - name: api
+          port: 3000
+    # Everything else is the React app.
+    - matches:
+        - path: { type: PathPrefix, value: / }
+      backendRefs:
+        - name: frontend
+          port: 8080
+---
+# HTTP: permanent redirect to HTTPS. The ACME challenge path is still served,
+# because cert-manager adds its own, more specific (exact-path) route while a
+# certificate is being issued or renewed.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: stocksync-http-redirect
+  labels: { app.kubernetes.io/name: gateway, app.kubernetes.io/part-of: stocksync }
+spec:
+  parentRefs:
+    - name: stocksync
+      sectionName: http
+  hostnames: ["stocksync.online"]
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

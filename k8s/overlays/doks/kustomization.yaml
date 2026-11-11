@@ -1,0 +1,31 @@
+# DigitalOcean Kubernetes (DOKS).
+# Images come from DigitalOcean Container Registry. Their full name and tag are
+# set at deploy time by k8s/deploy.sh (registry name + git commit), so the same
+# overlay deploys any version.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Applies to the resources added here too (Gateway, routes, Certificate);
+# the base sets it only for its own resources.
+namespace: stocksync
+resources:
+  - ../../base
+  - gateway.yaml
+  - certificate.yaml
+patches:
+  - target: { kind: ConfigMap, name: api-config }
+    patch: |-
+      - op: replace
+        path: /data/DEPLOY_ENV
+        value: doks
+  # Pull credentials for the private registry (Secret "docr", created by
+  # k8s/bootstrap.sh from `doctl registry kubernetes-manifest`).
+  - target: { kind: Deployment, name: api }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value: [{ name: docr }]
+  - target: { kind: Deployment, name: frontend }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value: [{ name: docr }]
