@@ -1,6 +1,6 @@
 # Continuous Integration: runs on every pull request and every push to main.
-# A pull request should only be merged when all three jobs are green.
-# (Continuous Deployment to DigitalOcean is added on Day 6.)
+# A pull request can only be merged when all four jobs are green (branch
+# protection). After a merge, a green run on main triggers CD (cd.yml).
 name: CI
 
 on:
@@ -115,11 +115,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Build for linux/amd64 (the DigitalOcean node architecture) to prove the
-      # images build there. Nothing is pushed yet; that is the CD step on Day 6.
+      # images build there. Nothing is pushed here; CD (cd.yml) pushes after merge.
       - name: Build API image
         run: docker build --platform linux/amd64 -t stocksync-api:ci ./backend
       - name: Build frontend image
         run: docker build --platform linux/amd64 -t stocksync-frontend:ci ./frontend
+      - name: Build backup image
+        run: docker build --platform linux/amd64 -t stocksync-backup:ci ./backup
+      - name: Check the backup image has its tools and scripts
+        run: |
+          docker run --rm --platform linux/amd64 --entrypoint /bin/bash stocksync-backup:ci -c \
+            'pg_dump --version && aws --version && for f in /usr/local/bin/backup*.sh /usr/local/bin/restore-test.sh; do bash -n "$f"; done && echo "backup image OK"'
       - name: Check the API image loads its code
         run: |
           docker run --rm --platform linux/amd64 \

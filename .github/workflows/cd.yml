@@ -1,0 +1,175 @@
+# =============================================================================
+# Continuous Deployment to DigitalOcean Kubernetes.
+#
+# Automatic: when CI passes on a push to main (i.e. after a PR is merged), this
+#   1. builds the API, frontend and backup images for linux/amd64,
+#   2. pushes them to DigitalOcean Container Registry tagged with the commit,
+#   3. deploys them with k8s/deploy.sh (the same script used by hand),
+#   4. verifies the live site (health + smoke test).
+#
+# Manual (Actions -> CD -> Run workflow): deploy an EXISTING image tag without
+# building, e.g. to roll back to an earlier commit. Leave the tag empty to
+# rebuild and redeploy the current main.
+#
+# Needs, in the GitHub environment "production":
+#   secret    DIGITALOCEAN_ACCESS_TOKEN   (scoped DigitalOcean API token)
+#   variables DOCR_REGISTRY               (e.g. stocksync-sohaib)
+#             CLUSTER_NAME                (e.g. stocksync)
+# =============================================================================
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing image tag to deploy (git short SHA), e.g. for a rollback. Empty = build and deploy the current main."
+        required: false
+        default: ""
+
+# One deployment at a time; a second one waits instead of cancelling the first.
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build, push and deploy to DOKS
+    # Only after a successful CI run for a PUSH to main (not for pull requests),
+    # or a manual run started from main.
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: production
+      url: https://stocksync.online
+    env:
+      DOCR_REGISTRY: ${{ vars.DOCR_REGISTRY }}
+      CLUSTER_NAME: ${{ vars.CLUSTER_NAME }}
+      REGISTRY: registry.digitalocean.com/${{ vars.DOCR_REGISTRY }}
+      SITE_URL: https://stocksync.online
+
+    steps:
+      # Exactly the commit CI tested (not whatever main is by the time this runs).
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Decide what to deploy
+        id: plan
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [[ -n "$INPUT_TAG" ]]; then
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"; echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "Deploying existing tag $INPUT_TAG (no build)"
+          else
+            tag="$(git rev-parse --short=7 HEAD)"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"; echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "Building and deploying $tag"
+          fi
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      # Short-lived credentials: registry login and kubeconfig both expire.
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 1800
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.plan.outputs.build == 'true'
+
+      - name: Build and push API image
+        if: steps.plan.outputs.build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.REGISTRY }}/stocksync-api:${{ steps.plan.outputs.tag }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Build and push frontend image
+        if: steps.plan.outputs.build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.REGISTRY }}/stocksync-frontend:${{ steps.plan.outputs.tag }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+      - name: Build and push backup image
+        if: steps.plan.outputs.build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backup
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.REGISTRY }}/stocksync-backup:${{ steps.plan.outputs.tag }}
+          cache-from: type=gha,scope=backup
+          cache-to: type=gha,scope=backup,mode=max
+
+      - name: Check that all three images exist for this tag
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          for repo in stocksync-api stocksync-frontend stocksync-backup; do
+            doctl registry repository list-tags "$repo" --format Tag --no-header | grep -qx "$TAG" \
+              || { echo "::error::$repo:$TAG not found in the registry"; exit 1; }
+          done
+
+      - name: Connect to the cluster
+        run: doctl kubernetes cluster kubeconfig save --expiry-seconds 1800 "$CLUSTER_NAME"
+
+      - name: Record the version currently running (for rollback)
+        run: |
+          prev="$(kubectl -n stocksync get deploy api -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')"
+          echo "Previously running: $prev"
+          echo "PREVIOUS_TAG=$prev" >> "$GITHUB_ENV"
+
+      - name: Deploy
+        run: ./k8s/deploy.sh doks "${{ steps.plan.outputs.tag }}"
+
+      - name: Verify the live site
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS "$SITE_URL/api/health" | grep -q '"status":"ready"'; then break; fi
+            echo "waiting for $SITE_URL/api/health ($i)"; sleep 5
+          done
+          curl -fsS "$SITE_URL/api/health"; echo
+          API_URL="$SITE_URL" ./tests/smoke-day1.sh
+
+      - name: Summary
+        if: always()
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          {
+            echo "### Deployment to DOKS"
+            echo "| | |"; echo "|---|---|"
+            echo "| Deployed tag | \`$TAG\` |"
+            echo "| Previous tag | \`${PREVIOUS_TAG:-unknown}\` |"
+            echo "| Built in this run | ${{ steps.plan.outputs.build }} |"
+            echo "| Site | $SITE_URL |"
+            echo ""
+            echo "Roll back: Actions -> CD -> Run workflow -> tag \`${PREVIOUS_TAG:-<previous tag>}\`"
+            echo ""
+            echo '```'
+            kubectl -n stocksync get deploy,hpa,cronjob 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
