@@ -1,4 +1,4 @@
-# Base manifests shared by every environment (minikube today, DOKS on Day 5).
+# Base manifests shared by every environment (minikube and DOKS).
 # Environment differences live in overlays/<env>/kustomization.yaml.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -11,4 +11,5 @@ resources:
   - configmap.yaml
   - postgres.yaml
   - api.yaml
+  - hpa.yaml
   - frontend.yaml

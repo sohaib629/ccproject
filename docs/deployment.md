@@ -18,7 +18,7 @@ Browser ──HTTPS──► stocksync.online (DigitalOcean DNS, A record)
          ┌─────────┴──────────┐
      /api/*                  /*
   Service api:3000     Service frontend:8080
-  (2–5 pods, HPA Day 6)  (2 nginx pods)
+  (2–5 pods, HPA)        (2 nginx pods)
          │
   Service postgres (headless) → StatefulSet postgres-0
                                  └── PVC data-postgres-0 (do-block-storage = DigitalOcean Volume)
@@ -33,9 +33,12 @@ Browser ──HTTPS──► stocksync.online (DigitalOcean DNS, A record)
 | Storage | PVC → DigitalOcean Volume (`do-block-storage`, default storage class) |
 | DNS | DigitalOcean DNS for `stocksync.online` (nameservers delegated from Namecheap) |
 | Monitoring | Resource alerts on all worker nodes (CPU, memory, disk) by tag `k8s:<cluster-id>`; external uptime check on `/api/health` with down and TLS-expiry alerts (`monitoring/setup-alerts.sh`) |
+| Backups | Spaces bucket `stocksync-backups` (nyc3): nightly `pg_dump`, newest 7 kept, bucket-scoped key ([operations.md](operations.md)) |
+| Deployment | GitHub Actions CD on every merge to `main` ([operations.md](operations.md)) |
 
 The same base manifests run on minikube and DOKS. The `doks` overlay adds the
-Gateway, routes and Certificate, the registry pull Secret and `DEPLOY_ENV=doks`.
+Gateway, routes and Certificate, the backup CronJobs, the registry pull Secret
+and `DEPLOY_ENV=doks`.
 `k8s/deploy.sh doks <tag>` pins the image versions and waits for every rollout.
 
 ## Design decisions
@@ -57,7 +60,8 @@ Gateway, routes and Certificate, the registry pull Secret and `DEPLOY_ENV=doks`.
 ## Known limitations
 
 - **Single database replica**: PostgreSQL is a single point of failure (the API is
-  highly available, the database is not). Backups to Spaces are added on Day 6.
+  highly available, the database is not). Nightly backups to Spaces (see
+  [operations.md](operations.md)) limit a loss to at most about a day of changes.
 - **Client IP behind the load balancer**: the Network Load Balancer does not pass
   the browser's IP to the Gateway, so the login rate limit counts attempts per
   load-balancer/Gateway source rather than per user. Acceptable at this scale;
@@ -73,4 +77,7 @@ doctl registry delete <registry-name>
 doctl compute domain delete stocksync.online
 doctl monitoring uptime list      # then: doctl monitoring uptime delete <id>
 doctl monitoring alert list       # then: doctl monitoring alert delete <uuid>
+# Spaces: delete the bucket stocksync-backups and its access key in the
+# control panel (Spaces Object Storage); then cancel the Spaces subscription.
+# GitHub: delete the DigitalOcean token (API page) and the "production" environment.
 ```

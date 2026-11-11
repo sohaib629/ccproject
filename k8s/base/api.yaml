@@ -22,7 +22,8 @@ metadata:
   name: api
   labels: { app.kubernetes.io/name: api, app.kubernetes.io/part-of: stocksync }
 spec:
-  replicas: 2                  # >= 2 for availability; the HPA (Day 6) scales 2 -> 5
+  # No `replicas:` here: the HorizontalPodAutoscaler (hpa.yaml) owns the count
+  # (2 -> 5). A fixed value would be re-applied on every deploy and fight the HPA.
   revisionHistoryLimit: 5      # keep old ReplicaSets for `kubectl rollout undo`
   selector:
     matchLabels: { app.kubernetes.io/name: api }

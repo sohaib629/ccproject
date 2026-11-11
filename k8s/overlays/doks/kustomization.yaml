@@ -1,7 +1,7 @@
 # DigitalOcean Kubernetes (DOKS).
 # Images come from DigitalOcean Container Registry. Their full name and tag are
 # set at deploy time by k8s/deploy.sh (registry name + git commit), so the same
-# overlay deploys any version.
+# overlay deploys any version. Backups to Spaces exist only here (backup.yaml).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 # Applies to the resources added here too (Gateway, routes, Certificate);
@@ -11,6 +11,7 @@ resources:
   - ../../base
   - gateway.yaml
   - certificate.yaml
+  - backup.yaml
 patches:
   - target: { kind: ConfigMap, name: api-config }
     patch: |-
