@@ -98,6 +98,7 @@ jobs:
           context: ./backend
           platforms: linux/amd64
           push: true
+          provenance: false      # plain image, no extra untagged attestation manifest
           tags: ${{ env.REGISTRY }}/stocksync-api:${{ steps.plan.outputs.tag }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
@@ -109,6 +110,7 @@ jobs:
           context: ./frontend
           platforms: linux/amd64
           push: true
+          provenance: false      # plain image, no extra untagged attestation manifest
           tags: ${{ env.REGISTRY }}/stocksync-frontend:${{ steps.plan.outputs.tag }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
@@ -120,6 +122,7 @@ jobs:
           context: ./backup
           platforms: linux/amd64
           push: true
+          provenance: false      # plain image, no extra untagged attestation manifest
           tags: ${{ env.REGISTRY }}/stocksync-backup:${{ steps.plan.outputs.tag }}
           cache-from: type=gha,scope=backup
           cache-to: type=gha,scope=backup,mode=max
@@ -127,10 +130,17 @@ jobs:
       - name: Check that all three images exist for this tag
         env:
           TAG: ${{ steps.plan.outputs.tag }}
+        # Ask the registry itself for each image manifest (authoritative, works
+        # right after a push), with a few retries for registry propagation.
         run: |
           for repo in stocksync-api stocksync-frontend stocksync-backup; do
-            doctl registry repository list-tags "$repo" --format Tag --no-header | grep -qx "$TAG" \
-              || { echo "::error::$repo:$TAG not found in the registry"; exit 1; }
+            ok=false
+            for attempt in 1 2 3 4 5 6; do
+              if docker manifest inspect "$REGISTRY/$repo:$TAG" > /dev/null 2>&1; then ok=true; break; fi
+              echo "$repo:$TAG not visible yet (attempt $attempt), retrying in 5 s"; sleep 5
+            done
+            $ok || { echo "::error::$repo:$TAG not found in $REGISTRY"; exit 1; }
+            echo "found $REGISTRY/$repo:$TAG"
           done
 
       - name: Connect to the cluster
