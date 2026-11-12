@@ -131,4 +131,4 @@ jobs:
           docker run --rm --platform linux/amd64 \
             -e DB_PASSWORD=unused -e JWT_SECRET=ci-check-0123456789abcdef0123456789 \
             --entrypoint node stocksync-api:ci \
-            -e "require('./src/app.js').createApp(); console.log('API image OK')"
+            -e "require('./src/app.js').createApp(); const n = require('./src/migrate.js').migrationFiles().length; if (n < 2) throw new Error('migrations missing from image'); console.log('API image OK,', n, 'migrations')"
