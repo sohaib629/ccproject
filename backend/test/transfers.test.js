@@ -22,10 +22,11 @@ before(async () => {
   MBA = ids.productId;
   NY = (await h.ids("NY", "LAP-MBA13-M4")).storeId;
   // Downtown starts with only 5 MacBooks; these tests dispatch many transfers.
-  const restock = await api.post("/api/restocks", {
-    token: tok.staffDT, body: { storeId: DT, productId: MBA, quantity: 50, note: "Test setup" },
+  // (Stores cannot receive supplier deliveries, so the setup uses an adjustment.)
+  const setup = await api.post("/api/adjustments", {
+    token: tok.managerDT, body: { storeId: DT, productId: MBA, change: 50, reason: "Test setup" },
   });
-  assert.equal(restock.status, 201);
+  assert.equal(setup.status, 201);
 });
 
 after(async () => {

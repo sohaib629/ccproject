@@ -34,6 +34,7 @@ const { Client } = require("pg");
 const config = require("../../src/config");
 const { createApp } = require("../../src/app");
 const { pool } = require("../../src/db");
+const { migrate } = require("../../src/migrate");
 
 const SQL_FILES = ["01-schema.sql", "02-seed.sql"].map((f) => path.join(repoRoot, "database/init", f));
 const PASSWORD = "StockSync!2026";
@@ -44,7 +45,7 @@ function clientFor(database) {
   });
 }
 
-/** Create the test database if needed, then rebuild it from the schema and seed files. */
+/** Create the test database if needed, rebuild it from the baseline (schema + seed), then apply every migration, exactly like a fresh deployment. */
 async function resetDatabase() {
   const admin = clientFor("postgres");
   await admin.connect();
@@ -60,6 +61,7 @@ async function resetDatabase() {
   for (const file of SQL_FILES) {
     await client.query(fs.readFileSync(file, "utf8"));
   }
+  await migrate(client);
   await client.end();
 }
 

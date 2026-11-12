@@ -13,13 +13,14 @@ const routeCatalog = require("../lib/routeCatalog");
 const router = Router();
 const startedAt = new Date();
 
-const TABLES = ["stores", "users", "products", "stock", "transfers", "stock_movements"];
+const TABLES = ["stores", "users", "products", "stock", "transfers", "stock_movements", "schema_migrations"];
 
 // Who can do what. Mirrors the checks in middleware/auth.js and services/inventory.js.
 const PERMISSIONS = [
-  { action: "View stock, products, low stock (both stores)", admin: true, manager: true, staff: true },
-  { action: "Record a sale or restock",                      admin: "any store", manager: "own store", staff: "own store" },
-  { action: "Stock adjustment (with reason)",                admin: "any store", manager: "own store", staff: false },
+  { action: "View stock, products, low stock (all locations)", admin: true, manager: true, staff: true },
+  { action: "Record a sale (stores only)",                     admin: "any store", manager: "own store", staff: "own store" },
+  { action: "Receive a supplier delivery (distribution centre only)", admin: true, manager: "if at the DC", staff: "if at the DC" },
+  { action: "Stock adjustment (with reason)",                  admin: "any location", manager: "own location", staff: false },
   { action: "Request a transfer",                            admin: true, manager: "own store involved", staff: "own store involved" },
   { action: "Dispatch a transfer",                           admin: true, manager: "source store", staff: false },
   { action: "Receive a transfer",                            admin: true, manager: "destination store", staff: "destination store" },
@@ -34,7 +35,7 @@ router.get("/", authenticate, requireRole("admin"), async (req, res) => {
   await db.query("SELECT 1");
   const latencyMs = Number(process.hrtime.bigint() - t0) / 1e6;
 
-  const [info, counts, integrity] = await Promise.all([
+  const [info, counts, integrity, migrations] = await Promise.all([
     db.query(`
       SELECT current_setting('server_version')             AS version,
              current_database()                            AS name,
@@ -56,6 +57,7 @@ router.get("/", authenticate, requireRole("admin"), async (req, res) => {
            SELECT 1 FROM transfers t
              LEFT JOIN stock_movements m ON m.transfer_id = t.id AND m.movement_type = 'transfer_in'
             WHERE t.status = 'received' GROUP BY t.id HAVING count(m.id) <> 1) y)     AS bad_receipts`),
+    db.query(`SELECT version, applied_at AS "appliedAt" FROM schema_migrations ORDER BY version`),
   ]);
 
   const d = info.rows[0];
@@ -69,6 +71,8 @@ router.get("/", authenticate, requireRole("admin"), async (req, res) => {
       environment: config.deployEnv,
       version: config.appVersion,
       gitSha: config.gitSha,
+      deployedAt: config.deployedAt,
+      commitUrl: config.gitSha === "dev" ? null : `${config.repoUrl}/commit/${config.gitSha}`,
       node: process.version,
       platform: `${process.platform}/${process.arch}`, // arm64 on a Mac, amd64 on DigitalOcean
       startedAt: startedAt.toISOString(),
@@ -96,6 +100,7 @@ router.get("/", authenticate, requireRole("admin"), async (req, res) => {
         waiting: db.pool.waitingCount,
       },
       tables: counts.rows,
+      migrations: migrations.rows,
     },
     integrity: [
       { check: "Stock equals the sum of its audit history", violations: i.mismatched, ok: i.mismatched === 0 },

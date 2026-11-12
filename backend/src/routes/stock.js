@@ -43,15 +43,27 @@ router.get("/stock", authenticate, async (req, res) => {
 });
 
 // GET /api/low-stock?storeId=2   (uses the low_stock view from the schema)
+//
+// Rule-based reorder suggestion for each low STORE row: bring the store up to
+// twice its reorder threshold, limited by what the distribution centre has.
+//   suggested = min(2 x threshold - quantity, units at the distribution centre)
+// A low row AT the distribution centre means "order from the supplier".
 router.get("/low-stock", authenticate, async (req, res) => {
   const { storeId } = parse(z.object({ storeId: id.optional() }), req.query);
   const { rows } = await db.query(
-    `SELECT store_id AS "storeId", store_code AS "storeCode", product_id AS "productId",
-            sku, product_name AS "name", category, quantity,
-            reorder_threshold AS "reorderThreshold", shortfall
-       FROM low_stock
-      WHERE ($1::int IS NULL OR store_id = $1)
-      ORDER BY shortfall DESC, store_code, sku`,
+    `SELECT l.store_id AS "storeId", l.store_code AS "storeCode", st.kind AS "storeKind",
+            l.product_id AS "productId", l.sku, l.product_name AS "name", l.category, l.quantity,
+            l.reorder_threshold AS "reorderThreshold", l.shortfall,
+            wh.id AS "warehouseId", coalesce(ws.quantity, 0) AS "warehouseQuantity",
+            CASE WHEN st.kind = 'store'
+                 THEN greatest(0, least(2 * l.reorder_threshold - l.quantity, coalesce(ws.quantity, 0)))
+            END AS "suggestedQuantity"
+       FROM low_stock l
+       JOIN stores st ON st.id = l.store_id
+       LEFT JOIN stores wh ON wh.kind = 'warehouse'
+       LEFT JOIN stock ws ON ws.store_id = wh.id AND ws.product_id = l.product_id
+      WHERE ($1::int IS NULL OR l.store_id = $1)
+      ORDER BY l.shortfall DESC, l.store_code, l.sku`,
     [storeId ?? null],
   );
   res.json({ lowStock: rows });

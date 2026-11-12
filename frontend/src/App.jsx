@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { api } from "./api";
 import { can, useAuth } from "./auth";
 import Login from "./pages/Login";
 import Inventory from "./pages/Inventory";
@@ -38,7 +40,7 @@ export default function App() {
             <strong>{user.fullName}</strong>
             <span className={`role role-${user.role}`}>{user.role}</span>
           </div>
-          <div className="muted small">{user.store ? user.store.name : "All stores"}</div>
+          <div className="muted small">{user.store ? user.store.name : "All locations"}</div>
         </div>
         <button className="btn ghost" onClick={logout}>Log out</button>
       </header>
@@ -53,6 +55,22 @@ export default function App() {
           <Route path="*" element={<Navigate to="/inventory" replace />} />
         </Routes>
       </main>
+      <BuildFooter />
     </div>
+  );
+}
+
+/** Which build is live: the git commit the running API was built from. */
+function BuildFooter() {
+  const [build, setBuild] = useState(null);
+  useEffect(() => {
+    api("/health").then(setBuild).catch(() => setBuild(null));
+  }, []);
+  if (!build) return null;
+  return (
+    <footer className="footer muted small">
+      StockSync {build.version} · build <code>{build.commit}</code>
+      {build.deployedAt && <> · deployed {new Date(build.deployedAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}</>}
+    </footer>
   );
 }

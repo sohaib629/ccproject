@@ -152,3 +152,9 @@ table.compact th, table.compact td { padding: 0.35rem 0.5rem; font-size: 0.88rem
   .topbar nav { order: 3; width: 100%; overflow-x: auto; }
   .content { padding: 1rem; }
 }
+
+/* Inventory paging and the build footer (Day 7) */
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: .75rem; margin-top: .75rem; }
+.pager .muted { margin-right: auto; }
+.footer { max-width: 1280px; margin: 0 auto; padding: .75rem 1.5rem 1.5rem; text-align: right; }
+.footer code { font-size: .95em; }

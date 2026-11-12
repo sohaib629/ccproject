@@ -4,8 +4,11 @@
 # Automatic: when CI passes on a push to main (i.e. after a PR is merged), this
 #   1. builds the API, frontend and backup images for linux/amd64,
 #   2. pushes them to DigitalOcean Container Registry tagged with the commit,
-#   3. deploys them with k8s/deploy.sh (the same script used by hand),
-#   4. verifies the live site (health + smoke test).
+#   3. backs up the database (restore point before any migration),
+#   4. deploys them with k8s/deploy.sh (the same script used by hand); new API
+#      pods apply pending database migrations in their init container,
+#   5. verifies the live site: the running commit equals the deployed tag,
+#      plus the smoke test.
 #
 # Manual (Actions -> CD -> Run workflow): deploy an EXISTING image tag without
 # building, e.g. to roll back to an earlier commit. Leave the tag empty to
@@ -152,16 +155,41 @@ jobs:
           echo "Previously running: $prev"
           echo "PREVIOUS_TAG=$prev" >> "$GITHUB_ENV"
 
+      # Restore point: if a migration in this release goes wrong, this backup
+      # holds the data exactly as it was before (docs/operations.md).
+      - name: Back up the database before deploying
+        run: |
+          job="predeploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          kubectl -n stocksync create job "$job" --from=cronjob/db-backup
+          for i in $(seq 1 60); do
+            ok="$(kubectl -n stocksync get job "$job" -o jsonpath='{.status.succeeded}')"
+            failed="$(kubectl -n stocksync get job "$job" -o jsonpath='{.status.failed}')"
+            [[ "$ok" == "1" ]] && break
+            if [[ -n "$failed" && "$failed" -ge 3 ]]; then break; fi
+            sleep 5
+          done
+          kubectl -n stocksync logs "job/$job" --tail=20 || true
+          [[ "$ok" == "1" ]] || { echo "::error::Pre-deploy backup failed; not deploying"; exit 1; }
+
       - name: Deploy
         run: ./k8s/deploy.sh doks "${{ steps.plan.outputs.tag }}"
 
-      - name: Verify the live site
+      # Proof that the NEW version is live: every answer must report the
+      # deployed commit (several requests, so several API pods are asked).
+      - name: Verify the live site runs this version
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS "$SITE_URL/api/health" | grep -q '"status":"ready"'; then break; fi
-            echo "waiting for $SITE_URL/api/health ($i)"; sleep 5
+            good=0
+            for n in 1 2 3 4 5 6; do
+              curl -fsS "$SITE_URL/api/health" | grep -q "\"commit\":\"$TAG\"" && good=$((good+1))
+            done
+            [[ $good -eq 6 ]] && break
+            echo "live commit not yet $TAG everywhere ($good/6), waiting ($i)"; sleep 5
           done
           curl -fsS "$SITE_URL/api/health"; echo
+          [[ $good -eq 6 ]] || { echo "::error::Live site does not report commit $TAG"; exit 1; }
           API_URL="$SITE_URL" ./tests/smoke-day1.sh
 
       - name: Summary
@@ -173,6 +201,7 @@ jobs:
             echo "### Deployment to DOKS"
             echo "| | |"; echo "|---|---|"
             echo "| Deployed tag | \`$TAG\` |"
+            echo "| Live commit | \`$(curl -fsS "$SITE_URL/api/health" | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p')\` |"
             echo "| Previous tag | \`${PREVIOUS_TAG:-unknown}\` |"
             echo "| Built in this run | ${{ steps.plan.outputs.build }} |"
             echo "| Site | $SITE_URL |"

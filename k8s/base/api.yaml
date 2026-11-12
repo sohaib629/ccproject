@@ -56,6 +56,32 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000            # mounted Secret files belong to this group (mode 0440)
         seccompProfile: { type: RuntimeDefault }
+      # Database migrations run BEFORE the app starts, in every new API pod.
+      # They are idempotent (each file once, recorded in schema_migrations) and
+      # serialised by an advisory lock, so many pods starting together are safe.
+      # If a migration fails, the new pod never starts; with maxUnavailable 0
+      # the old pods keep serving, and the deploy fails visibly.
+      initContainers:
+        - name: migrate
+          image: stocksync-api   # same image, so code and migrations always match
+          command: ["node", "src/migrate.js"]
+          envFrom:
+            - configMapRef:
+                name: api-config
+          env:
+            - name: DB_PASSWORD_FILE
+              value: /run/secrets/db_password
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 192Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
       containers:
         - name: api
           image: stocksync-api   # tag set by the overlay (kustomize "images:")

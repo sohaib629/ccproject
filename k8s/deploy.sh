@@ -7,8 +7,10 @@
 #       images: registry.digitalocean.com/<name>/stocksync-{api,frontend,backup}:TAG
 #       TAG defaults to the current git commit (short SHA)
 #
-# Renders the overlay through a temporary kustomization that pins the images,
-# applies it, and waits for every rollout. Used by hand and by CD
+# Renders the overlay through a temporary kustomization that pins the images
+# and stamps the build (GIT_SHA = TAG, DEPLOYED_AT = now) into the API pods,
+# applies it, and waits for every rollout. Database migrations run in the API
+# pods' init container, so a failed migration stops the rollout here. Used by hand and by CD
 # (.github/workflows/cd.yml), so both deploy exactly the same way.
 # =============================================================================
 set -euo pipefail
@@ -29,6 +31,7 @@ else
   TAG="${2:-$(git rev-parse --short HEAD)}"
 fi
 
+DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "Context:  $(kubectl config current-context)"
 echo "Overlay:  $OVERLAY"
 echo "Images:   $API_IMAGE:$TAG"
@@ -57,10 +60,31 @@ images:
   - name: stocksync-backup
     newName: $BACKUP_IMAGE
     newTag: "$TAG"
+patches:
+  # Build information shown on the System page and in /api/health.
+  - target: { kind: Deployment, name: api }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: { name: api }
+      spec:
+        template:
+          spec:
+            containers:
+              - name: api
+                env:
+                  - { name: GIT_SHA, value: "$TAG" }
+                  - { name: DEPLOYED_AT, value: "$DEPLOYED_AT" }
 YAML
 
 kubectl apply -k "$TMP"
 kubectl -n stocksync rollout status statefulset/postgres --timeout=180s
-kubectl -n stocksync rollout status deployment/api --timeout=180s
+# Includes the migration init container of each new pod; on failure, show why.
+if ! kubectl -n stocksync rollout status deployment/api --timeout=300s; then
+  echo "API rollout did not finish. Migration logs of the newest pod:"
+  pod="$(kubectl -n stocksync get pods -l app.kubernetes.io/name=api --sort-by=.metadata.creationTimestamp -o name | tail -1)"
+  kubectl -n stocksync logs "$pod" -c migrate --tail=50 || true
+  exit 1
+fi
 kubectl -n stocksync rollout status deployment/frontend --timeout=180s
 echo "Deployed $OVERLAY at $TAG"

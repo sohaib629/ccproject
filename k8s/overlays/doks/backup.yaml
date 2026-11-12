@@ -26,7 +26,7 @@ data:
   S3_ENDPOINT: https://nyc3.digitaloceanspaces.com
   S3_BUCKET: stocksync-backups      # bucket names are global; change if taken
   S3_PREFIX: postgres
-  KEEP: "7"
+  KEEP: "14"                               # nightly + one before each deploy (CD)
 ---
 apiVersion: batch/v1
 kind: CronJob

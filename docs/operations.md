@@ -89,8 +89,10 @@ PR opened ──► CI (4 required checks) ──► merge to main
                               CI runs again on main ── green ──► CD (.github/workflows/cd.yml)
                                                                    1. build api, frontend, backup (linux/amd64)
                                                                    2. push to DOCR as :<commit>
-                                                                   3. k8s/deploy.sh doks <commit>   (rolling update)
-                                                                   4. verify: /api/health + smoke test
+                                                                   3. backup the database (restore point)
+                                                                   4. k8s/deploy.sh doks <commit>   (rolling update;
+                                                                      new pods run migrations first)
+                                                                   5. verify: live commit = <commit> + smoke test
 ```
 
 * **Only tested code is deployed.** CD starts only when CI succeeds for a *push* to
@@ -103,6 +105,10 @@ PR opened ──► CI (4 required checks) ──► merge to main
   running two at once.
 * **Rollback.** Actions → CD → *Run workflow* with an earlier tag deploys that
   version without rebuilding. The job summary of every run shows the previous tag.
+* **Proof the new version is live.** `deploy.sh` stamps `GIT_SHA` (the tag) and
+  `DEPLOYED_AT` into the API pods; `/api/health` reports them, and CD asks
+  several times until every answer reports the new commit. The same build is
+  shown on the System page (linked to the GitHub commit) and in the page footer.
 * **Credentials.** A DigitalOcean API token in the GitHub environment
   `production` (encrypted secret). The registry login and kubeconfig it creates
   expire after 30 minutes. Nothing is stored in git.
@@ -207,3 +213,44 @@ the bucket key.)
 **Limitation:** with nightly backups, up to about a day of changes could be lost.
 Continuous WAL archiving (point-in-time recovery) would reduce that; it is out
 of scope.
+
+---
+
+## 4. Database migrations
+
+`database/init/*.sql` is the **baseline**: PostgreSQL runs it once, on an empty
+volume. Every later schema or data change is a numbered file in
+`backend/migrations/`:
+
+| File | Change |
+|---|---|
+| `001_distribution_centre.sql` | location `kind` (`store`/`warehouse`), the distribution centre WH and its two users, opening stock, and a trigger: sales only at stores, supplier deliveries only at the DC |
+| `002_catalogue_100_products.sql` | 88 more products (100 in total) with opening stock at all three locations |
+
+**Runner:** `backend/src/migrate.js` (`node src/migrate.js`).
+
+* Records each applied file and its SHA-256 in `schema_migrations`; a file runs
+  **at most once**. Changing an applied file is refused: add a new file instead.
+* Each file runs in **one transaction**: all of it or nothing.
+* A PostgreSQL **advisory lock** serialises runners, so several pods starting
+  together cannot apply the same file twice.
+
+**Where it runs:**
+
+| Environment | How |
+|---|---|
+| Kubernetes (minikube, DOKS) | **init container** `migrate` in every API pod, same image as the app. A failed migration keeps the new pod from starting; with `maxUnavailable: 0` the old pods keep serving and the deploy fails visibly (`deploy.sh` prints the migration log) |
+| Docker Compose | one-off `migrate` service; the API starts only after it exits successfully |
+| Tests | the harness applies every migration after loading the baseline |
+
+**Safety net.** CD takes a backup *before* each deploy, so a release with a bad
+migration can be undone: restore that backup (section 3) and redeploy the
+previous tag. New migrations should be **backward compatible** for the few
+seconds of a rolling update (old pods still running against the new schema):
+add columns and rows, do not rename or drop in the same release.
+
+```bash
+kubectl -n stocksync logs deploy/api -c migrate        # what the latest pod's init container did
+kubectl -n stocksync exec postgres-0 -- psql -U stocksync -d stocksync \
+  -c "SELECT version, applied_at FROM schema_migrations ORDER BY version"
+```

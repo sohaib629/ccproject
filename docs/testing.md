@@ -4,14 +4,15 @@
 
 | What | Command | Needs |
 |---|---|---|
-| Automated test suite (42 tests) | `cd backend && npm test` | `docker compose up -d db`, Node 24, `npm ci` once |
+| Automated test suite (58 tests) | `cd backend && npm test` | `docker compose up -d db`, Node 24, `npm ci` once |
 | Day 1 smoke test | `./tests/smoke-day1.sh` | full stack running |
 | Last-unit race against any deployment | `node tests/concurrency-test.mjs` (`API_URL=...` to target minikube/DOKS) | full stack running |
 | Database integrity checks | `docker compose exec -T db psql -U stocksync -d stocksync < database/checks.sql` | db running |
 
 The automated suite uses a **separate database, `stocksync_test`**, in the same
-PostgreSQL server. It is dropped and re-seeded from `database/init/*.sql` before
-each test file, so tests always start from a known state and never touch
+PostgreSQL server. It is dropped, re-seeded from `database/init/*.sql` and
+brought up to date with every migration in `backend/migrations/` before each
+test file (exactly like a fresh deployment), so tests always start from a known state and never touch
 development data. (The harness refuses to run against a database whose name does
 not end in `_test`.)
 
@@ -25,6 +26,10 @@ not end in `_test`.)
 | Transfers | full lifecycle; dispatch only by source manager; receive only by destination; double dispatch/receive rejected; insufficient source stock leaves the transfer `requested`; cancelling in-transit returns units (`transfer_return`) |
 | Transfer races | 10 simultaneous receives → units arrive once; 10 simultaneous dispatches → units leave once; receive vs cancel → exactly one wins, no unit lost or duplicated |
 | Access control | store scoping (403), role checks (403), validation (400), login required (401) |
+| Login rate limit | only wrong passwords (401) count; successes, malformed requests and server errors do not |
+| Distribution centre | 3 locations, 100 products; sales only at stores and supplier deliveries only at the DC (`409 WRONG_LOCATION_TYPE`), also enforced by a database trigger; replenishment DC → store moves units exactly once; two stores racing for the DC's last units → one dispatch succeeds, stock never negative; low-stock suggestion = min(2 × threshold − stock, DC stock) |
+| Migrations | every file applied once with a matching checksum; running them again changes nothing |
+| Build info | `/api/health` reports version and commit |
 | System page | admin-only (401/403 for others); reports DB, pool, integrity, auth; **never contains the JWT key, DB password or password hashes**; every catalogued route exists |
 | Integrity | after every test file: stock = sum of audit history; no negative stock; every received transfer has exactly one `transfer_in` |
 

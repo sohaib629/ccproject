@@ -66,17 +66,19 @@ test("30 simultaneous single-unit sales against 5 units: exactly 5 succeed", asy
   assert.deepEqual(after, [0, 1, 2, 3, 4]);
 });
 
-test("simultaneous sales and restocks keep stock equal to its audit history", async () => {
+test("simultaneous sales and stock increases keep stock equal to its audit history", async () => {
   const IP = await h.ids("DT", "PHN-IP17-256"); // seeded with 12
   const requests = [];
   for (let i = 0; i < 20; i++) {
     requests.push(api.post("/api/sales", { token: staffDT, body: { storeId: IP.storeId, productId: IP.productId, quantity: 2 } }));
-    requests.push(api.post("/api/restocks", { token: staffDT, body: { storeId: IP.storeId, productId: IP.productId, quantity: 1 } }));
+    requests.push(api.post("/api/adjustments", {
+      token: managerDT, body: { storeId: IP.storeId, productId: IP.productId, change: 1, reason: "Concurrency test" },
+    }));
   }
   const responses = await Promise.all(requests);
   const sold = responses.filter((r) => r.status === 201 && r.body.sale).length * 2;
-  const restocked = responses.filter((r) => r.status === 201 && r.body.restock).length;
-  assert.equal(restocked, 20, "restocks never fail");
+  const restocked = responses.filter((r) => r.status === 201 && r.body.adjustment).length;
+  assert.equal(restocked, 20, "increases never fail");
   assert.equal(await h.quantity("DT", "PHN-IP17-256"), 12 + restocked - sold);
 });
 
