@@ -158,3 +158,11 @@ table.compact th, table.compact td { padding: 0.35rem 0.5rem; font-size: 0.88rem
 .pager .muted { margin-right: auto; }
 .footer { max-width: 1280px; margin: 0 auto; padding: .75rem 1.5rem 1.5rem; text-align: right; }
 .footer code { font-size: .95em; }
+
+/* Admin page (Day 7B) */
+.toolbar.spaced { display: flex; align-items: center; gap: .75rem; justify-content: space-between; margin-bottom: .75rem; }
+.toolbar.spaced input[type=text], .toolbar.spaced input:not([type]) { min-width: 16rem; }
+tr.inactive td { opacity: .55; }
+.history { margin-top: 1rem; border-top: 1px solid var(--border, #e5e7eb); padding-top: .75rem; }
+.history ul { margin: .25rem 0 0; padding-left: 1.1rem; max-height: 10rem; overflow: auto; }
+.history h3 { margin: 0; }

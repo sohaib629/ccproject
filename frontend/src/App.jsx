@@ -8,6 +8,7 @@ import Transfers from "./pages/Transfers";
 import History from "./pages/History";
 import LowStock from "./pages/LowStock";
 import System from "./pages/System";
+import Admin from "./pages/Admin";
 
 export default function App() {
   const { user, logout } = useAuth();
@@ -18,7 +19,7 @@ export default function App() {
     ["/transfers", "Transfers"],
     ["/low-stock", "Low stock"],
     ["/history", "History"],
-    ...(can.viewSystem(user) ? [["/system", "System"]] : []),
+    ...(can.viewSystem(user) ? [["/admin", "Admin"], ["/system", "System"]] : []),
   ];
 
   return (
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="/transfers" element={<Transfers />} />
           <Route path="/low-stock" element={<LowStock />} />
           <Route path="/history" element={<History />} />
+          <Route path="/admin" element={can.viewSystem(user) ? <Admin /> : <Navigate to="/inventory" replace />} />
           <Route path="/system" element={can.viewSystem(user) ? <System /> : <Navigate to="/inventory" replace />} />
           <Route path="*" element={<Navigate to="/inventory" replace />} />
         </Routes>
