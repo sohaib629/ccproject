@@ -13,6 +13,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
+# Database migrations, applied by `node src/migrate.js` (Kubernetes init container).
+COPY migrations ./migrations
 
 # Do not run as root. Files stay root-owned, so the app cannot modify its own code.
 USER node
