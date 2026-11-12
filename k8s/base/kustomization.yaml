@@ -12,4 +12,5 @@ resources:
   - postgres.yaml
   - api.yaml
   - hpa.yaml
+  - networkpolicy.yaml
   - frontend.yaml

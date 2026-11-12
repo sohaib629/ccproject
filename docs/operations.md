@@ -254,3 +254,44 @@ kubectl -n stocksync logs deploy/api -c migrate        # what the latest pod's i
 kubectl -n stocksync exec postgres-0 -- psql -U stocksync -d stocksync \
   -c "SELECT version, applied_at FROM schema_migrations ORDER BY version"
 ```
+
+---
+
+## 5. Security inside the cluster and the supply chain
+
+### NetworkPolicy: a firewall in front of the database
+
+`k8s/base/networkpolicy.yaml` (`postgres-ingress`) allows connections to
+PostgreSQL (TCP 5432) **only** from pods labelled `api` (including their
+`migrate` init container), `db-backup` and `db-restore-test`. Every other pod
+in the cluster, such as the frontend, cannot even open a connection, so a
+compromised web container could not reach the data. Only incoming traffic to
+the database pod is restricted; nothing else changes. Cilium enforces it on DOKS.
+
+```bash
+kubectl -n stocksync get networkpolicy
+# blocked: a throwaway pod WITHOUT an allowed label
+kubectl -n stocksync run np-test --rm -i --restart=Never --image=busybox:1.37 -- nc -zv -w 3 postgres 5432
+# allowed: the same pod WITH the API label
+kubectl -n stocksync run np-test --rm -i --restart=Never --image=busybox:1.37 \
+  --labels=app.kubernetes.io/name=api -- nc -zv -w 3 postgres 5432
+# instant undo, if ever needed
+kubectl -n stocksync delete networkpolicy postgres-ingress
+```
+
+### Image vulnerability scan (CI)
+
+The **Image vulnerability scan** job builds the api, frontend and backup images
+and scans them with Trivy on every pull request and push. HIGH and CRITICAL
+findings are listed in the job summary; the job **fails on CRITICAL issues that
+have a fix available**, so a vulnerable image cannot be merged and deployed.
+Justified exceptions go in `.trivyignore` with a reason. It is a required check
+in branch protection (5 checks in total).
+
+### Accounts
+
+Every API request re-checks the account behind its token (one indexed lookup).
+Deactivating a user or resetting a password (`users.token_version`) ends that
+user's sessions on every replica immediately, instead of when the 8-hour token
+expires. Product and account changes are recorded in the append-only
+`admin_audit` table (who, when, what; never passwords).

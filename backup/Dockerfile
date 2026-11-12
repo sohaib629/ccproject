@@ -7,7 +7,13 @@
 FROM postgres:18-alpine
 
 # aws-cli talks to DigitalOcean Spaces through its S3-compatible API.
-RUN apk add --no-cache bash aws-cli coreutils
+# `apk upgrade` pulls in security fixes published since the base image was built.
+RUN apk upgrade --no-cache && apk add --no-cache bash aws-cli coreutils
+# gosu is only used by the PostgreSQL server entrypoint to drop root privileges.
+# This image never runs that entrypoint (it starts as uid 70), so remove the
+# binary: it was built with an old Go version (CVE-2025-68121, found by the CI
+# image scan), and unused binaries are attack surface.
+RUN rm -f /usr/local/bin/gosu
 
 COPY --chmod=0755 backup-common.sh backup.sh restore-test.sh /usr/local/bin/
 

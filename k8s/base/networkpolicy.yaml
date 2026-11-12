@@ -1,0 +1,31 @@
+# =============================================================================
+# Database firewall: only the pods that need PostgreSQL may connect to it.
+#
+#   allowed  API pods (including their "migrate" init container)
+#            backup and restore-test jobs (DigitalOcean overlay)
+#   blocked  everything else in the cluster, e.g. the frontend (nginx) pods,
+#            or any pod an attacker might manage to start
+#
+# Only traffic INTO the database pod is restricted; nothing else changes.
+# Enforced by Cilium on DOKS. (minikube's default network plugin ignores
+# NetworkPolicies; start minikube with --cni=cilium to enforce them locally.)
+#
+# Instant undo if ever needed:
+#   kubectl -n stocksync delete networkpolicy postgres-ingress
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-ingress
+  labels: { app.kubernetes.io/part-of: stocksync }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: postgres }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: api } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: db-backup } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: db-restore-test } }
+      ports:
+        - { protocol: TCP, port: 5432 }

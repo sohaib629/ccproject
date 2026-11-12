@@ -1,13 +1,16 @@
 // Authentication (who are you?) and authorization (are you allowed?).
 const jwt = require("jsonwebtoken");
 const config = require("../config");
+const db = require("../db");
 const { unauthorized, forbidden } = require("../lib/errors");
 
 const ROLES = Object.freeze(["admin", "manager", "staff"]);
 
 function signToken(user) {
   return jwt.sign(
-    { role: user.role, storeId: user.store_id, name: user.full_name },
+    // tv = token version: bumped when the password is reset or the account is
+    // deactivated, which invalidates every token issued before.
+    { role: user.role, storeId: user.store_id, name: user.full_name, tv: user.token_version ?? 0 },
     config.jwt.secret,
     {
       subject: String(user.id),
@@ -20,33 +23,46 @@ function signToken(user) {
 
 /**
  * Require a valid "Authorization: Bearer <token>" header.
- * On success, req.user = { id, role, storeId, name }.
- * The token is self-contained, so any API replica can verify it without shared
- * session state; that is what keeps the API stateless and horizontally scalable.
+ * On success, req.user = { id, role, storeId, name, ... }.
+ *
+ * The signature check needs no shared state, so any API replica can verify any
+ * token. One indexed lookup then confirms the account is still active and the
+ * token is not older than the last password reset, so deactivating a user or
+ * resetting a password takes effect immediately on every replica. Role and store
+ * come from that fresh row, not from the (possibly outdated) token.
  */
-function authenticate(req, _res, next) {
+async function authenticate(req, _res, next) {
   const header = req.get("authorization") || "";
   const [scheme, token] = header.split(" ");
   if (scheme !== "Bearer" || !token) {
     return next(unauthorized());
   }
+  let claims;
   try {
-    const claims = jwt.verify(token, config.jwt.secret, {
+    claims = jwt.verify(token, config.jwt.secret, {
       algorithms: ["HS256"], // pin the algorithm: rejects "alg: none" and key-confusion tricks
       issuer: config.jwt.issuer,
     });
-    req.user = {
-      id: Number(claims.sub),
-      role: claims.role,
-      storeId: claims.storeId ?? null,
-      name: claims.name,
-      tokenIssuedAt: new Date(claims.iat * 1000).toISOString(),
-      tokenExpiresAt: new Date(claims.exp * 1000).toISOString(),
-    };
-    return next();
   } catch {
     return next(unauthorized("Invalid or expired token"));
   }
+  const { rows } = await db.query(
+    `SELECT role, store_id, full_name, is_active, token_version FROM users WHERE id = $1`,
+    [Number(claims.sub)],
+  );
+  const account = rows[0];
+  if (!account || !account.is_active || account.token_version !== (claims.tv ?? 0)) {
+    return next(unauthorized("Session is no longer valid, please log in again"));
+  }
+  req.user = {
+    id: Number(claims.sub),
+    role: account.role,
+    storeId: account.store_id ?? null,
+    name: account.full_name,
+    tokenIssuedAt: new Date(claims.iat * 1000).toISOString(),
+    tokenExpiresAt: new Date(claims.exp * 1000).toISOString(),
+  };
+  return next();
 }
 
 /**

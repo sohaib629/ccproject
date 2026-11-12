@@ -4,7 +4,7 @@
 
 | What | Command | Needs |
 |---|---|---|
-| Automated test suite (58 tests) | `cd backend && npm test` | `docker compose up -d db`, Node 24, `npm ci` once |
+| Automated test suite (73 tests) | `cd backend && npm test` | `docker compose up -d db`, Node 24, `npm ci` once |
 | Day 1 smoke test | `./tests/smoke-day1.sh` | full stack running |
 | Last-unit race against any deployment | `node tests/concurrency-test.mjs` (`API_URL=...` to target minikube/DOKS) | full stack running |
 | Database integrity checks | `docker compose exec -T db psql -U stocksync -d stocksync < database/checks.sql` | db running |
@@ -30,6 +30,9 @@ not end in `_test`.)
 | Distribution centre | 3 locations, 100 products; sales only at stores and supplier deliveries only at the DC (`409 WRONG_LOCATION_TYPE`), also enforced by a database trigger; replenishment DC → store moves units exactly once; two stores racing for the DC's last units → one dispatch succeeds, stock never negative; low-stock suggestion = min(2 × threshold − stock, DC stock) |
 | Migrations | every file applied once with a matching checksum; running them again changes nothing |
 | Build info | `/api/health` reports version and commit |
+| Product admin | only admins create/edit/deactivate (403 otherwise); new product has 0 units everywhere; duplicate SKU 409; only real changes audited; a deactivated product cannot be sold or transferred, is hidden from non-admins, keeps its history, and sells again after reactivation |
+| User admin | admin-only; role/location rules; 10-character passwords; case-insensitive unique email; **deactivation and password reset end existing sessions immediately**; deactivated users cannot log in; an admin cannot deactivate themselves; changes audited without passwords; `admin_audit` is append-only |
+| Atomicity | fault injection (a temporary trigger makes the audit insert fail): the stock decrease is rolled back |
 | System page | admin-only (401/403 for others); reports DB, pool, integrity, auth; **never contains the JWT key, DB password or password hashes**; every catalogued route exists |
 | Integrity | after every test file: stock = sum of audit history; no negative stock; every received transfer has exactly one `transfer_in` |
 
