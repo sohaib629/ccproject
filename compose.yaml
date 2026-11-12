@@ -1,6 +1,6 @@
 # StockSync local development stack.
 #   docker compose up --build -d      build and start everything; open http://localhost:8080
-#   docker compose ps                 status (both services should be "healthy")
+#   docker compose ps                 status (db, api, frontend "healthy"; migrate "exited (0)")
 #   docker compose logs -f api        follow API logs
 #   docker compose down               stop; the db-data volume (your data) is kept
 #   docker compose down -v            stop AND delete data (re-runs database/init/*.sql next start)
@@ -36,6 +36,27 @@ services:
     networks:
       - app-network
 
+  # One-off job: apply database migrations (backend/migrations), then exit.
+  # The API starts only after it finished successfully.
+  migrate:
+    build: ./backend                  # same image as the api service
+    image: stocksync-api:dev
+    command: ["node", "src/migrate.js"]
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-stocksync}
+      DB_NAME: ${POSTGRES_DB:-stocksync}
+      DB_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - app-network
+
   api:
     build: ./backend
     image: stocksync-api:dev
@@ -62,6 +83,8 @@ services:
     depends_on:
       db:
         condition: service_healthy      # wait for pg_isready, not just "container started"
+      migrate:
+        condition: service_completed_successfully   # schema is up to date first
     healthcheck:
       # node:24-slim has no curl; Node 24 has fetch built in.
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
