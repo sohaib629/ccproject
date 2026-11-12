@@ -62,7 +62,11 @@ export default function System() {
         <Card title="API instance" hint="The replica that answered this refresh">
           <KV k="Instance" v={<code>{a.instance}</code>} />
           <KV k="Environment" v={a.environment} />
-          <KV k="Version" v={`${a.version} (${a.gitSha})`} />
+          <KV k="Version" v={a.version} />
+          <KV k="Commit" v={a.commitUrl
+            ? <a href={a.commitUrl} target="_blank" rel="noreferrer"><code>{a.gitSha}</code></a>
+            : <code>{a.gitSha}</code>} />
+          <KV k="Deployed" v={a.deployedAt ? new Date(a.deployedAt).toLocaleString() : "— (not deployed by deploy.sh)"} />
           <KV k="Runtime" v={`Node ${a.node} · ${a.platform}`} />
           <KV k="Uptime" v={duration(a.uptimeSeconds)} />
           <KV k="Memory" v={`${a.memoryMb.rss} MB RSS · ${a.memoryMb.heapUsed} MB heap`} />
@@ -92,6 +96,11 @@ export default function System() {
           <KV k="Size" v={`${db.sizeMb} MB`} />
           <KV k="Connections" v={`${db.connections.thisDatabase} open (server max ${db.connections.serverMax})`} />
           <KV k="Server uptime" v={duration(db.serverUptimeSeconds)} />
+          <KV k="Schema migrations" v={db.migrations?.length
+            ? <span title={db.migrations.map((m) => `${m.version} · ${new Date(m.appliedAt).toLocaleString()}`).join("\n")}>
+                {db.migrations.length} applied · latest <code>{db.migrations.at(-1).version}</code>
+              </span>
+            : "none"} />
         </Card>
 
         <Card title="Connection pool" hint="This replica's pool">

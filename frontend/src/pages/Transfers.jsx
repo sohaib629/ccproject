@@ -61,7 +61,7 @@ export default function Transfers() {
         </div>
       </div>
 
-      <p className="muted small flow">Requested → <b>Dispatch</b> (source manager, units leave) → In transit → <b>Receive</b> (destination store, units arrive) → Received</p>
+      <p className="muted small flow">Requested → <b>Dispatch</b> (source manager, units leave) → In transit → <b>Receive</b> (destination, units arrive) → Received. Stores are normally replenished from the distribution centre (WH).</p>
       <Alert kind="success" onClose={() => setNotice(null)}>{notice}</Alert>
       <Alert onClose={() => setError(null)}>{error}</Alert>
 
@@ -118,9 +118,12 @@ function NewTransferModal({ user, onClose, onCreated }) {
     Promise.all([api("/stores"), api("/products")]).then(([{ stores }, { products }]) => {
       setStores(stores);
       setProducts(products);
-      // Default: my store asks the other store for units.
-      const mine = user.store?.id ?? stores[1]?.id;
-      const other = stores.find((s) => s.id !== mine)?.id;
+      // Default: my store asks the distribution centre for units (the normal
+      // replenishment route); the DC itself defaults to supplying a store.
+      const warehouse = stores.find((s) => s.kind === "warehouse");
+      const firstStore = stores.find((s) => s.kind === "store");
+      const mine = user.store?.id ?? firstStore?.id;
+      const other = (warehouse && warehouse.id !== mine ? warehouse : stores.find((s) => s.id !== mine))?.id;
       setForm((f) => ({ ...f, toStoreId: mine, fromStoreId: other, productId: products[0]?.id }));
     }).catch((err) => setError(errorMessage(err)));
   }, [user]);
