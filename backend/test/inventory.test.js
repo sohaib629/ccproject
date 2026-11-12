@@ -36,8 +36,9 @@ describe("stock views", () => {
   test("GET /api/products includes per-store quantities", async () => {
     const res = await api.get("/api/products?q=MacBook", { token: staffNY });
     assert.equal(res.status, 200);
-    assert.deepEqual(res.body.products[0].stock, { DT: 5, NY: 8 });
-    assert.equal(res.body.products[0].totalQuantity, 13);
+    // Two stores plus the distribution centre (migration 001 gives it 40).
+    assert.deepEqual(res.body.products[0].stock, { DT: 5, NY: 8, WH: 40 });
+    assert.equal(res.body.products[0].totalQuantity, 53);
   });
 
   test("GET /api/low-stock lists rows at or below their reorder threshold", async () => {
@@ -132,16 +133,51 @@ describe("sales", () => {
 });
 
 describe("restocks and adjustments", () => {
-  test("restock adds units and records an audit entry", async () => {
+  test("a supplier delivery (restock) at the distribution centre adds units and is audited", async () => {
+    const staffWH = await api.login("staff.wh@stocksync.dev");
+    const wh = await h.ids("WH", "CON-PS5-SLIM"); // 30 at the distribution centre
     const res = await api.post("/api/restocks", {
-      token: staffDT,
-      body: { storeId: PS5.storeId, productId: PS5.productId, quantity: 4, note: "Delivery #1042" },
+      token: staffWH,
+      body: { storeId: wh.storeId, productId: wh.productId, quantity: 4, note: "Delivery #1042" },
     });
     assert.equal(res.status, 201);
-    assert.equal(res.body.restock.quantityAfter, 5);
-    const [m] = (await api.get(`/api/movements?productId=${PS5.productId}&type=restock`, { token: managerDT })).body.movements;
+    assert.equal(res.body.restock.quantityAfter, 34);
+    const [m] = (await api.get(`/api/movements?productId=${wh.productId}&type=restock`, { token: staffWH })).body.movements;
     assert.equal(m.quantityChange, 4);
     assert.equal(m.reason, "Delivery #1042");
+  });
+
+  test("a store cannot receive supplier deliveries: 409 WRONG_LOCATION_TYPE, nothing changes", async () => {
+    const before = await h.quantity("DT", "CON-PS5-SLIM");
+    const res = await api.post("/api/restocks", {
+      token: staffDT,
+      body: { storeId: PS5.storeId, productId: PS5.productId, quantity: 4 },
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.body.error.code, "WRONG_LOCATION_TYPE");
+    assert.equal(await h.quantity("DT", "CON-PS5-SLIM"), before);
+  });
+
+  test("nothing can be sold at the distribution centre: 409 WRONG_LOCATION_TYPE", async () => {
+    const wh = await h.ids("WH", "CON-PS5-SLIM");
+    const res = await api.post("/api/sales", {
+      token: admin,
+      body: { storeId: wh.storeId, productId: wh.productId, quantity: 1 },
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.body.error.code, "WRONG_LOCATION_TYPE");
+  });
+
+  test("the database itself refuses a sale at the distribution centre (trigger, last line of defence)", async () => {
+    const wh = await h.ids("WH", "CON-PS5-SLIM");
+    await assert.rejects(
+      h.sql(
+        `INSERT INTO stock_movements (store_id, product_id, user_id, movement_type, quantity_change, quantity_after)
+         VALUES ($1, $2, (SELECT id FROM users WHERE email = 'admin@stocksync.dev'), 'sale', -1, 0)`,
+        [wh.storeId, wh.productId],
+      ),
+      (err) => err.code === "23514" && err.constraint === "movements_sale_at_store",
+    );
   });
 
   test("staff cannot make adjustments (403)", async () => {
@@ -169,13 +205,14 @@ describe("restocks and adjustments", () => {
     assert.equal(res.body.error.code, "INSUFFICIENT_STOCK");
   });
 
-  test("manager adjustment (-2, damaged) succeeds and is audited", async () => {
+  test("manager adjustment (-1, damaged) succeeds and is audited", async () => {
+    // PS5 at Downtown: seeded with 1 (the store restock above was refused).
     const res = await api.post("/api/adjustments", {
       token: managerDT,
-      body: { storeId: PS5.storeId, productId: PS5.productId, change: -2, reason: "Water damage in storage" },
+      body: { storeId: PS5.storeId, productId: PS5.productId, change: -1, reason: "Water damage in storage" },
     });
     assert.equal(res.status, 201);
-    assert.equal(res.body.adjustment.quantityAfter, 3);
+    assert.equal(res.body.adjustment.quantityAfter, 0);
   });
 
   test("admin can adjust any store", async () => {

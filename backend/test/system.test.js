@@ -34,7 +34,7 @@ test("reports the API instance, database, integrity, auth and routes", async () 
   assert.match(body.api.node, /^v\d+/);
   assert.match(body.database.version, /^\d+/);
   assert.ok(body.database.latencyMs >= 0);
-  assert.equal(body.database.tables.find((t) => t.table === "stores").rows, 2);
+  assert.equal(body.database.tables.find((t) => t.table === "stores").rows, 3);
   assert.ok(body.database.pool.max > 0);
   assert.equal(body.integrity.length, 3);
   assert.ok(body.integrity.every((c) => c.ok), "fresh seed data passes every integrity check");
