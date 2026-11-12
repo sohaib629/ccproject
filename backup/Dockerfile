@@ -7,7 +7,8 @@
 FROM postgres:18-alpine
 
 # aws-cli talks to DigitalOcean Spaces through its S3-compatible API.
-RUN apk add --no-cache bash aws-cli coreutils
+# `apk upgrade` pulls in security fixes published since the base image was built.
+RUN apk upgrade --no-cache && apk add --no-cache bash aws-cli coreutils
 
 COPY --chmod=0755 backup-common.sh backup.sh restore-test.sh /usr/local/bin/
 

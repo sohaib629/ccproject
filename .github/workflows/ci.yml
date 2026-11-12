@@ -1,5 +1,5 @@
 # Continuous Integration: runs on every pull request and every push to main.
-# A pull request can only be merged when all four jobs are green (branch
+# A pull request can only be merged when all five jobs are green (branch
 # protection). After a merge, a green run on main triggers CD (cd.yml).
 name: CI
 
@@ -132,3 +132,43 @@ jobs:
             -e DB_PASSWORD=unused -e JWT_SECRET=ci-check-0123456789abcdef0123456789 \
             --entrypoint node stocksync-api:ci \
             -e "require('./src/app.js').createApp(); const n = require('./src/migrate.js').migrationFiles().length; if (n < 2) throw new Error('migrations missing from image'); console.log('API image OK,', n, 'migrations')"
+
+  # Scan the three images for known vulnerabilities (CVEs) with Trivy.
+  # Fails only on CRITICAL issues that already have a fix (upgrading would solve
+  # them); everything HIGH or CRITICAL is listed in the job summary. Justified,
+  # temporary exceptions go in .trivyignore (one CVE id per line, with a reason).
+  image-scan:
+    name: Image vulnerability scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TRIVY: >-
+        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+        -v ${{ github.workspace }}:/src:ro -v trivy-cache:/root/.cache/trivy
+        aquasec/trivy:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images
+        run: |
+          docker build --platform linux/amd64 -t stocksync-api:scan ./backend
+          docker build --platform linux/amd64 -t stocksync-frontend:scan ./frontend
+          docker build --platform linux/amd64 -t stocksync-backup:scan ./backup
+      - name: Report HIGH and CRITICAL vulnerabilities (job summary)
+        run: |
+          for img in api frontend backup; do
+            $TRIVY image --quiet --scanners vuln --severity HIGH,CRITICAL --ignorefile /src/.trivyignore \
+              --format table "stocksync-$img:scan" > "report-$img.txt" || true
+            {
+              echo "### stocksync-$img"
+              echo '```'
+              head -c 60000 "report-$img.txt"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: Fail on fixable CRITICAL vulnerabilities
+        run: |
+          for img in api frontend backup; do
+            echo "== stocksync-$img"
+            $TRIVY image --quiet --scanners vuln --severity CRITICAL --ignore-unfixed \
+              --ignorefile /src/.trivyignore --exit-code 1 "stocksync-$img:scan"
+          done
