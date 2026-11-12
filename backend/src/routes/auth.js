@@ -40,7 +40,7 @@ router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = parse(loginSchema, req.body);
 
   const { rows } = await db.query(
-    `SELECT u.id, u.email, u.full_name, u.password_hash, u.role, u.store_id, u.is_active,
+    `SELECT u.id, u.email, u.full_name, u.password_hash, u.role, u.store_id, u.is_active, u.token_version,
             s.code AS store_code, s.name AS store_name, s.kind AS store_kind
        FROM users u
        LEFT JOIN stores s ON s.id = u.store_id

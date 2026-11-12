@@ -13,7 +13,7 @@ const routeCatalog = require("../lib/routeCatalog");
 const router = Router();
 const startedAt = new Date();
 
-const TABLES = ["stores", "users", "products", "stock", "transfers", "stock_movements", "schema_migrations"];
+const TABLES = ["stores", "users", "products", "stock", "transfers", "stock_movements", "admin_audit", "schema_migrations"];
 
 // Who can do what. Mirrors the checks in middleware/auth.js and services/inventory.js.
 const PERMISSIONS = [
@@ -26,7 +26,7 @@ const PERMISSIONS = [
   { action: "Receive a transfer",                            admin: true, manager: "destination store", staff: "destination store" },
   { action: "Cancel a transfer",                             admin: true, manager: "either store", staff: false },
   { action: "Audit history",                                 admin: "all stores", manager: "own store", staff: "own store" },
-  { action: "Users list, System page",                       admin: true, manager: false, staff: false },
+  { action: "Manage products and user accounts, System page", admin: true, manager: false, staff: false },
 ];
 
 router.get("/", authenticate, requireRole("admin"), async (req, res) => {
@@ -116,6 +116,7 @@ router.get("/", authenticate, requireRole("admin"), async (req, res) => {
       databasePassword: { source: config.secretSources.DB_PASSWORD },
       passwordHashing: "bcrypt, cost factor 12",
       loginRateLimit: "10 failed attempts per 15 minutes per client IP",
+      sessions: "every request re-checks the account: deactivation or a password reset ends sessions immediately",
       roles: ROLES,
       permissions: PERMISSIONS,
       yourToken: { userId: req.user.id, role: req.user.role, issuedAt: req.user.tokenIssuedAt, expiresAt: req.user.tokenExpiresAt },
