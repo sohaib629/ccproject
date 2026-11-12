@@ -116,19 +116,36 @@ describe("sales", () => {
   });
 
   test("atomicity: if the audit insert fails, the stock decrease is rolled back", async () => {
-    // A validly signed token for a user id that does not exist: the stock UPDATE
-    // succeeds, then the audit INSERT fails its foreign key. The transaction must
-    // undo the UPDATE.
+    // Fault injection: a temporary trigger makes the audit INSERT fail for a
+    // marked request. The stock UPDATE has already run in the same transaction;
+    // the transaction must undo it.
+    await h.sql(`CREATE FUNCTION test_fail_audit() RETURNS trigger LANGUAGE plpgsql AS $$
+                 BEGIN IF NEW.reason = 'FAIL-AUDIT' THEN RAISE EXCEPTION 'injected failure'; END IF; RETURN NEW; END $$`);
+    await h.sql(`CREATE TRIGGER test_fail_audit BEFORE INSERT ON stock_movements
+                 FOR EACH ROW EXECUTE FUNCTION test_fail_audit()`);
+    try {
+      const before = await h.quantity("DT", "LAP-MBA13-M4");
+      const res = await api.post("/api/sales", {
+        token: staffDT,
+        body: { storeId: MBA.storeId, productId: MBA.productId, quantity: 1, note: "FAIL-AUDIT" },
+      });
+      assert.equal(res.status, 500);
+      assert.equal(await h.quantity("DT", "LAP-MBA13-M4"), before, "stock must be unchanged");
+    } finally {
+      await h.sql("DROP TRIGGER test_fail_audit ON stock_movements");
+      await h.sql("DROP FUNCTION test_fail_audit()");
+    }
+  });
+
+  test("a validly signed token for an account that does not exist is rejected (401)", async () => {
     const ghost = jwt.sign({ role: "staff", storeId: MBA.storeId, name: "Ghost" }, h.config.jwt.secret, {
       subject: "99999", issuer: h.config.jwt.issuer, algorithm: "HS256", expiresIn: "5m",
     });
-    const before = await h.quantity("DT", "LAP-MBA13-M4");
     const res = await api.post("/api/sales", {
       token: ghost,
       body: { storeId: MBA.storeId, productId: MBA.productId, quantity: 1 },
     });
-    assert.equal(res.status, 400); // foreign key violation mapped to 400
-    assert.equal(await h.quantity("DT", "LAP-MBA13-M4"), before, "stock must be unchanged");
+    assert.equal(res.status, 401);
   });
 });
 
