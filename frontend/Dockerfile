@@ -14,6 +14,12 @@ RUN npm run build
 # ---- serve ----
 # nginx-unprivileged runs as a non-root user and listens on 8080.
 FROM nginxinc/nginx-unprivileged:stable-alpine
+# Apply Alpine security fixes released after the base image was built (found by
+# the CI image scan, e.g. CVE-2026-111497 in brotli-libs). Root is needed only
+# for this step; the image runs as the unprivileged nginx user (uid 101).
+USER root
+RUN apk upgrade --no-cache
+USER 101
 ENV API_UPSTREAM=http://api:3000
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
