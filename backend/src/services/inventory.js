@@ -11,6 +11,9 @@
 //      without any locks in Node.js, which is why it works across API replicas.
 //   4. Transfers lock their row (SELECT ... FOR UPDATE) before checking the
 //      status, so two simultaneous "receive" clicks cannot both succeed.
+//   5. Location rules (migration 001): sales only at stores, supplier
+//      deliveries (restocks) only at the distribution centre. Checked here for a
+//      clear error, and enforced again by a database trigger.
 // =============================================================================
 const db = require("../db");
 const { canActOnStore } = require("../middleware/auth");
@@ -86,6 +89,18 @@ async function increaseStock(client, { storeId, productId, quantity }) {
   return rows[0].quantity;
 }
 
+/** 'store' | 'warehouse' for a location; 404 if it does not exist. */
+async function locationKind(client, storeId) {
+  const { rows } = await client.query(`SELECT kind FROM stores WHERE id = $1`, [storeId]);
+  if (!rows[0]) throw notFound("Store not found");
+  return rows[0].kind;
+}
+
+const WRONG_LOCATION = {
+  sale: "Sales are recorded at stores, not at the distribution centre",
+  restock: "Supplier deliveries are received at the distribution centre; stores are replenished by transfer",
+};
+
 function assertStoreAccess(user, storeId) {
   if (!canActOnStore(user, storeId)) {
     throw forbidden("You can only change stock at your own store");
@@ -99,6 +114,9 @@ function assertStoreAccess(user, storeId) {
 async function recordSale(user, { storeId, productId, quantity, note }) {
   assertStoreAccess(user, storeId);
   return db.withTransaction(async (client) => {
+    if ((await locationKind(client, storeId)) !== "store") {
+      throw conflict("WRONG_LOCATION_TYPE", WRONG_LOCATION.sale);
+    }
     const after = await decreaseStock(client, { storeId, productId, quantity });
     const movement = await recordMovement(client, {
       storeId, productId, userId: user.id, type: "sale", change: -quantity, after, reason: note,
@@ -107,9 +125,13 @@ async function recordSale(user, { storeId, productId, quantity, note }) {
   });
 }
 
+/** Supplier delivery received at the distribution centre. */
 async function recordRestock(user, { storeId, productId, quantity, note }) {
   assertStoreAccess(user, storeId);
   return db.withTransaction(async (client) => {
+    if ((await locationKind(client, storeId)) !== "warehouse") {
+      throw conflict("WRONG_LOCATION_TYPE", WRONG_LOCATION.restock);
+    }
     await assertStoreAndActiveProduct(client, storeId, productId);
     const after = await increaseStock(client, { storeId, productId, quantity });
     const movement = await recordMovement(client, {

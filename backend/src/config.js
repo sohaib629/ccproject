@@ -68,7 +68,11 @@ const config = Object.freeze({
   // Shown on the System page. DEPLOY_ENV: docker-compose | minikube | doks.
   deployEnv: process.env.DEPLOY_ENV || "local",
   appVersion: process.env.APP_VERSION || require("../package.json").version,
+  // Build information, set by k8s/deploy.sh (and therefore by CD) on every
+  // deploy: the git commit of the running image and when it was deployed.
   gitSha: process.env.GIT_SHA || "dev",
+  deployedAt: process.env.DEPLOYED_AT || null,
+  repoUrl: process.env.REPO_URL || "https://github.com/sohaib629/ccproject",
   // Filled in by the Kubernetes Downward API from Day 4 onwards (null before).
   kubernetes: Object.freeze({
     podName: process.env.POD_NAME || null,

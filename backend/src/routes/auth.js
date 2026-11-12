@@ -41,7 +41,7 @@ router.post("/login", loginLimiter, async (req, res) => {
 
   const { rows } = await db.query(
     `SELECT u.id, u.email, u.full_name, u.password_hash, u.role, u.store_id, u.is_active,
-            s.code AS store_code, s.name AS store_name
+            s.code AS store_code, s.name AS store_name, s.kind AS store_kind
        FROM users u
        LEFT JOIN stores s ON s.id = u.store_id
       WHERE lower(u.email) = lower($1)`,
@@ -64,7 +64,7 @@ router.post("/login", loginLimiter, async (req, res) => {
 router.get("/me", authenticate, async (req, res) => {
   const { rows } = await db.query(
     `SELECT u.id, u.email, u.full_name, u.role, u.store_id, u.is_active,
-            s.code AS store_code, s.name AS store_name
+            s.code AS store_code, s.name AS store_name, s.kind AS store_kind
        FROM users u
        LEFT JOIN stores s ON s.id = u.store_id
       WHERE u.id = $1`,
@@ -80,7 +80,7 @@ function toPublicUser(u) {
     email: u.email,
     fullName: u.full_name,
     role: u.role,
-    store: u.store_id ? { id: u.store_id, code: u.store_code, name: u.store_name } : null,
+    store: u.store_id ? { id: u.store_id, code: u.store_code, name: u.store_name, kind: u.store_kind } : null,
   };
 }
 

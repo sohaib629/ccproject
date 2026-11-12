@@ -11,16 +11,20 @@ const config = require("../config");
 
 const router = Router();
 
+// Which build is running. Public on purpose: the commit is already public in
+// the repository, and CD checks it to prove the new version is really live.
+const build = { version: config.appVersion, commit: config.gitSha, deployedAt: config.deployedAt };
+
 router.get("/health", (_req, res) => {
-  res.json({ status: "ok", instance: config.instance });
+  res.json({ status: "ok", instance: config.instance, ...build });
 });
 
 async function readiness(_req, res) {
   try {
     await db.query("SELECT 1");
-    res.json({ status: "ready", instance: config.instance, database: "up" });
+    res.json({ status: "ready", instance: config.instance, database: "up", ...build });
   } catch {
-    res.status(503).json({ status: "not_ready", instance: config.instance, database: "down" });
+    res.status(503).json({ status: "not_ready", instance: config.instance, database: "down", ...build });
   }
 }
 
