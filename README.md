@@ -447,7 +447,8 @@ documented in [ai-session.md](ai-session.md).
 
 ## 10. Individual Contributions
 
-_To be added._
+All team members contributed to the project's planning, development, testing,
+deployment, documentation, and coordination.
 
 ---
 
