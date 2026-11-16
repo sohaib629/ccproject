@@ -38,10 +38,16 @@ spec:
       # /var/run -> /run, and the token mount (/var/run/secrets/kubernetes.io/...)
       # would otherwise collide with our read-only secret volume.
       automountServiceAccountToken: false
+      # Hard rule: the two frontend replicas must run on different nodes.
+      # matchLabelKeys counts only pods of the same version, so old pods do not
+      # block a rolling update; nodeTaintsPolicy: Honor ignores a failed
+      # (tainted) node, so replacement pods are not stuck Pending.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
+          whenUnsatisfiable: DoNotSchedule
+          nodeTaintsPolicy: Honor
+          matchLabelKeys: [pod-template-hash]
           labelSelector:
             matchLabels: { app.kubernetes.io/name: frontend }
       securityContext:

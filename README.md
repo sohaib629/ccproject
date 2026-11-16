@@ -174,16 +174,20 @@ locks.
 
 ### 5.3 Advanced feature 2: Auto-scaling and high availability
 
-- **Two replicas** of the API and frontend, spread across both nodes, with a
-  PodDisruptionBudget and zero-downtime rolling updates (`maxUnavailable: 0`).
+- **Two replicas** of the API and frontend, one on each node (a topology spread
+  rule: required for the frontend, preferred for the API so it can scale to 5 pods
+  on 2 nodes), with a PodDisruptionBudget and zero-downtime rolling updates
+  (`maxUnavailable: 0`).
 - **Readiness vs liveness probes**: if PostgreSQL is down, API pods stop receiving
   traffic but are not restarted in a loop.
 - **Horizontal Pod Autoscaler**: API **2 → 5 replicas** at 70% CPU (of a 100m
   request), adding up to 2 pods per 30 s and removing 1 per minute after 2 minutes.
-- **Evidence**: k6 sustained load (≈130 requests/s for 7 minutes) scaled the API
-  **2 → 4 → 5** within about a minute and back to 2 afterwards (`kubectl describe hpa`
-  events). The final run passed both thresholds: **p95 676 ms, 0.08% errors**.
-  Earlier runs found two bugs and a capacity limit (Section 11).
+- **Evidence** (100-product catalogue): a k6 run with 15 browsing users and 1 login/s
+  (≈39 requests/s for 7 minutes) scaled the API **2 → 4 → 5** within about a minute
+  and back to 2 afterwards (`kubectl get hpa -w`), passing both thresholds:
+  **p95 529 ms, 0.09% errors**. At 40 users and 4 logins/s all 5 pods were CPU-bound
+  (p95 6.8 s, 0.94% errors): a capacity limit, not a bug. Earlier runs found two bugs
+  (Section 11).
 
 ### 5.4 Advanced feature 3: CI/CD
 
@@ -410,7 +414,7 @@ Design decisions and teardown: [docs/deployment.md](docs/deployment.md).
 | Smoke test against the live site | 13/13 (also run by every deployment) |
 | Last-unit race, 20 buyers | split across both API pods; exactly 1 sale, quantity 0, 1 audit row |
 | Persistence | data survives deleting `postgres-0` (DigitalOcean Volume) |
-| Auto-scaling (k6) | 2 → 5 replicas and back; p95 676 ms, 0.08% errors at ≈130 req/s |
+| Auto-scaling (k6) | 2 → 5 replicas and back; p95 529 ms, 0.09% errors at ≈39 req/s |
 | Zero-downtime deploy | 0 failed requests during a rolling update |
 | Backup and restore | 14/14; the pre-migration backup restores exactly |
 | NetworkPolicy | unauthorized pod: timeout; API-labelled pod: connected |
