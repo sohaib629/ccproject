@@ -2,7 +2,7 @@
 
 **Live application:** https://stocksync.online
 **Repository:** https://github.com/sohaib629/ccproject
-**Video demo:** _link to be added (see [Section 12](#12-video-demo))_
+**Video demo:** [Watch the 5-minute demo](docs/demo/StockSync_Demo.mp4) (see [Section 12](#12-video-demo))
 
 ![CI](https://github.com/sohaib629/ccproject/actions/workflows/ci.yml/badge.svg)
 
@@ -518,4 +518,34 @@ did fail, and that is how the system improved.
 
 ## 12. Video Demo
 
-_Link to be added: 2–5 minute demonstration._
+**[▶ Watch the demo (4:55, MP4, 16 MB)](docs/demo/StockSync_Demo.mp4)**
+
+The video walks through the live system at https://stocksync.online in three parts.
+
+**1. The application**
+- **Inventory:** all 100 products with stock at the distribution centre and both stores;
+  a sale at the Downtown store and a stock request to the distribution centre.
+- **Transfers:** the request moving through Requested → In Transit → Received.
+- **Low stock:** items below their reorder level with a suggested quantity.
+- **History:** the append-only audit log of every stock change.
+- **Admin:** products and user accounts (administrator only).
+- **System:** which API pod and node answered, database health, migrations, live
+  integrity checks and the deployed commit.
+
+**2. Kubernetes from the terminal** ([`docs/demo/terminal-demo.sh`](docs/demo/terminal-demo.sh))
+- Connection to the DOKS cluster and its 2 nodes.
+- Running pods, the node each runs on, and their images tagged with the git commit;
+  finished backup job pods.
+- Inside each container: the non-root frontend, the API health check, the migration
+  init container, a live PostgreSQL query, and the last backup log.
+- PostgreSQL storage: the StatefulSet and its PVC on a DigitalOcean Volume.
+- A zero-downtime rolling update of the API (recorded run, shown from
+  [`rolling-update-recorded.txt`](docs/demo/rolling-update-recorded.txt)): 20 / 20
+  requests returned 200 while the pods were replaced.
+
+**3. DigitalOcean and GitHub**
+- **DigitalOcean:** the cluster's nodes and pods, the container registry with the three
+  images, the PostgreSQL volume, backups in Spaces, and monitoring (metrics, alerts and
+  the uptime check).
+- **GitHub Actions:** the 5 CI jobs on every change, and the CD steps (build and push
+  images, back up the database, deploy, verify the live version).

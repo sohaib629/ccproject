@@ -1,0 +1,34 @@
+### STEP 10
+$ kubectl -n stocksync get pods -l app.kubernetes.io/name=api -w   (recording in the background)
+$ kubectl -n stocksync rollout restart deployment/api
+deployment.apps/api restarted
+
+$ curl https://stocksync.online/api/health   (every second until the rollout is finished)
+200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200
+
+Waiting for deployment "api" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "api" rollout to finish: 1 old replicas are pending termination...
+deployment "api" successfully rolled out
+
+20 / 20 requests returned 200 during the update: zero downtime
+### STEP 11
+EVENT      NAME                  READY   STATUS            RESTARTS   AGE
+ADDED      api-8f5c7f8b4-j7j8f   1/1     Running           0          36h
+ADDED      api-8f5c7f8b4-zsdkh   1/1     Running           0          36h
+ADDED      api-b4fdd49f7-xgbhj   0/1     Pending           0          0s
+MODIFIED   api-b4fdd49f7-xgbhj   0/1     Init:0/1          0          0s
+MODIFIED   api-b4fdd49f7-xgbhj   0/1     PodInitializing   0          2s
+MODIFIED   api-b4fdd49f7-xgbhj   1/1     Running           0          9s
+MODIFIED   api-8f5c7f8b4-j7j8f   1/1     Terminating       0          36h
+ADDED      api-b4fdd49f7-tjnjw   0/1     Pending           0          0s
+MODIFIED   api-b4fdd49f7-tjnjw   0/1     Init:0/1          0          0s
+MODIFIED   api-b4fdd49f7-tjnjw   0/1     PodInitializing   0          2s
+DELETED    api-8f5c7f8b4-j7j8f   0/1     Completed         0          36h
+MODIFIED   api-b4fdd49f7-tjnjw   1/1     Running           0          9s
+MODIFIED   api-8f5c7f8b4-zsdkh   1/1     Terminating       0          36h
+DELETED    api-8f5c7f8b4-zsdkh   0/1     Completed         0          36h
+### STEP 12
+$ kubectl -n stocksync get pods -l app.kubernetes.io/name=api -o wide
+NAME                  READY   STATUS    RESTARTS   AGE    IP             NODE
+api-b4fdd49f7-tjnjw   1/1     Running   0          95s    10.200.0.60    default-3ayvho
+api-b4fdd49f7-xgbhj   1/1     Running   0          104s   10.200.0.153   default-3ayvhj
