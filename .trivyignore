@@ -1,3 +1,14 @@
 # Trivy exceptions for the CI image scan (.github/workflows/ci.yml).
 # One CVE id per line, each with a comment: why it does not apply, and when to
 # revisit it. Keep this list short; fixing (upgrading) is always preferred.
+
+# nginx 1.30.6 in nginxinc/nginx-unprivileged:stable-alpine (fixed in 1.30.7, not yet
+# in the base image; `apk upgrade` cannot update it because nginx comes from the
+# nginx.org repository, not Alpine's). None applies to our configuration: the
+# frontend nginx only serves plain HTTP/1.1 on port 8080 behind the Gateway
+# (frontend/nginx/default.conf.template: no mail proxy, no http2, no http3/quic).
+# Revisit by the expiry date: remove these lines once the base image ships 1.30.7.
+CVE-2026-113425 exp:2026-12-31
+CVE-2026-121810 exp:2026-12-31
+CVE-2026-123007 exp:2026-12-31
+CVE-2026-123633 exp:2026-12-31
