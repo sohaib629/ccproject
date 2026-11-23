@@ -2,7 +2,7 @@
 
 **Live application:** https://stocksync.online
 **Repository:** https://github.com/sohaib629/ccproject
-**Video demo:** [Watch the 5-minute demo](docs/demo/StockSync_Demo.mp4) (see [Section 12](#12-video-demo))
+**Video demo:** [Download the demo (MP4, 16 MB)](https://github.com/sohaib629/ccproject/raw/main/docs/demo/StockSync_Demo.mp4) · in the repo at `docs/demo/StockSync_Demo.mp4` (see [Section 12](#12-video-demo))
 
 ![CI](https://github.com/sohaib629/ccproject/actions/workflows/ci.yml/badge.svg)
 
@@ -518,7 +518,10 @@ did fail, and that is how the system improved.
 
 ## 12. Video Demo
 
-**[▶ Watch the demo (4:55, MP4, 16 MB)](docs/demo/StockSync_Demo.mp4)**
+**[▶ Download and watch the demo (4:55, MP4, 16 MB)](https://github.com/sohaib629/ccproject/raw/main/docs/demo/StockSync_Demo.mp4)**
+
+Location in this repository: [`docs/demo/StockSync_Demo.mp4`](docs/demo/StockSync_Demo.mp4).
+GitHub does not preview files of this size in the browser, so the link above downloads it.
 
 The video walks through the live system at https://stocksync.online in three parts.
 
